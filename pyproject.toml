@@ -1,0 +1,57 @@
+# Project metadata ------------------------------------------------------------
+[project]
+name = "lmeh"
+version = "0.1.0"
+description = "Language Model Evaluation Harness"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+readme = "README.md"
+authors = [{ name = "Ignacio Llorca", email = "nllorca@proton.me" }]
+dependencies = []
+
+# Dev / optional dependencies -------------------------------------------------
+[dependency-groups]
+dev = [
+    "complexipy",
+    "pytest-cov",
+    "ruff",
+    "ty",
+]
+
+# Build backend ---------------------------------------------------------------
+[build-system]
+requires = ["uv_build>=0.11.1,<0.12.0"]
+build-backend = "uv_build"
+
+# Ruff (lint + format) --------------------------------------------------------
+[tool.ruff]
+fix = true
+line-length = 100
+
+[tool.ruff.lint]
+select = ["D", "E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["D105", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+# Semantic release (automated versioning from conventional commits) -----------
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+build_command = ""  # We do this using uv in the CI verify.yaml workflow
+commit_message = "chore: release {version}"
+commit_parser = "conventional"
+tag_format = "v{version}"
+changelog_file = false
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+# Spelling --------------------------------------------------------------------
+# [tool.codespell]
+# skip = ["", ""]  # Comma separated list of regex strings to ignore files for the spelling check
+# ignore-words-list = "firstword,secondword"  # Specific strings to accept

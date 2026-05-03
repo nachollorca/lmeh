@@ -1,0 +1,10 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 864f3c8
+_src_path: mold/
+author_email: nllorca@proton.me
+author_name: Ignacio Llorca
+license: MIT
+project_description: Language Model Evaluation Harness
+project_name: lmeh
+project_slug: lmeh
+python_version: '3.13'
