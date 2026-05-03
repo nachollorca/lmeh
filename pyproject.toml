@@ -1,7 +1,7 @@
 # Project metadata ------------------------------------------------------------
 [project]
 name = "lmeh"
-version = "0.1.0"
+version = "1.0.0"
 description = "Language Model Evaluation Harness"
 requires-python = ">=3.13"
 license = { text = "MIT" }
