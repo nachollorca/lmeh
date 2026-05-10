@@ -7,12 +7,15 @@ requires-python = ">=3.13"
 license = { text = "MIT" }
 readme = "README.md"
 authors = [{ name = "Ignacio Llorca", email = "nllorca@proton.me" }]
-dependencies = []
+dependencies = [
+    "lmdk>=1.8.0",
+]
 
 # Dev / optional dependencies -------------------------------------------------
 [dependency-groups]
 dev = [
     "complexipy",
+    "pytest>=9.0.3",
     "pytest-cov",
     "ruff",
     "ty",
