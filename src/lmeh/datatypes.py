@@ -1,4 +1,4 @@
-"""Test for data contracts."""
+"""Core data contracts shared across the harness."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -8,32 +8,38 @@ from typing import Any, Protocol
 from lmdk import CompletionResponse
 from pydantic import BaseModel
 
-# Note: `output` relates to `prediction`, `obtained`. `reference` relates to `truth`, `expected`
-
 
 @dataclass
 class Example:
-    """A single datset row, with the optional expected output (it might not be needed for some metrics)."""
+    """A single dataset row.
+
+    Some metrics (e.g. "is length less than X") do not need a ground truth,
+    hence ``reference`` is optional.
+
+    Args:
+        inputs: Variables to process into the prompt template.
+        reference: Expected output, if available.
+    """
 
     inputs: dict[str, Any]
     reference: Any | None = None
 
 
-@dataclass
-class Dataset:
-    """A collection of examples to test a function."""
-
-    examples: list[Example]
+Dataset = list[Example]
 
 
 @dataclass
-class Config:
+class ExperimentConfig:
     """The moving pieces of an Experiment that the harness can sweep.
 
-    For MVP we are single-turn only: `prompt_template` is rendered once with
-    the example inputs and sent as a single user message. No system
-    instruction, no message list. Multi-turn can be added later as a
-    non-breaking extension.
+    A ``TargetFunction`` receives these fields plus the per-example ``inputs``
+    that get processed into ``prompt_template``.
+
+    Args:
+        model: Identifier of the model to call.
+        prompt_template: Jinja style template rendered into the user message.
+        generation_kwargs: Extra arguments forwarded to the model call.
+        output_schema: Optional pydantic schema enforcing structured output.
     """
 
     model: str
@@ -45,11 +51,9 @@ class Config:
 class TargetFunction(Protocol):
     """The shape every function under evaluation must follow.
 
-    Mirrors `Config` 1:1 so the harness can call
-    `target(example.inputs, **vars(config))` without per-target glue.
-
-    Contract: render `prompt_template` with `inputs`, send as one user
-    message, return the resulting `CompletionResponse`.
+    The implementation may transform ``inputs``, render them into
+    ``prompt_template``, and dispatch the result as a single user message,
+    returning the model's ``CompletionResponse``.
     """
 
     def __call__(
@@ -63,41 +67,31 @@ class TargetFunction(Protocol):
 
 
 @dataclass
-class JudgeConfig:
-    """The knobs of an LLM judge, kept separate from the target's `Config`."""
-
-    model: str
-    generation_kwargs: dict[str, Any] | None = None
-
-
-@dataclass
 class Experiment:
-    """A target paired with the configuration under test."""
+    """A named target paired with the configuration under test."""
 
     name: str
     target: TargetFunction
-    config: Config
-
-
-@dataclass
-class RunInfo:
-    """Captures *when* an experiment was executed, and with which version."""
-
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    commit_sha: str | None = None
+    config: ExperimentConfig
 
 
 @dataclass
 class Score:
-    """The evaluation result for one example and one metric."""
+    """The evaluation result for one example and one metric.
 
-    value: int | float | str | bool
+    Args:
+        value: Raw score in the metric's native scale.
+        normalized: ``value`` mapped to ``[0, 1]`` for cross-metric aggregation.
+        reason: Optional rationale (typically populated by LLM judges).
+    """
+
+    value: int | float | str
     normalized: float
     reason: str = ""
 
 
 class DeterministicScorer(Protocol):
-    """Defines the signature that any deterministic scoring function must follow."""
+    """Signature of any deterministic (non-LLM) scoring function."""
 
     def __call__(
         self,
@@ -106,8 +100,20 @@ class DeterministicScorer(Protocol):
     ) -> Score: ...
 
 
+@dataclass
+class JudgeConfig:
+    """The knobs of an LLM judge, kept separate from the target's config."""
+
+    model: str
+    generation_kwargs: dict[str, Any] | None = None
+
+
 class StochasticScorer(Protocol):
-    """Defines the signature of any LLM judge."""
+    """Signature of any LLM-judge scoring function.
+
+    Receives the rendered target prompt so the judge can reason about both
+    the question and the model's answer.
+    """
 
     def __call__(
         self,
@@ -119,79 +125,96 @@ class StochasticScorer(Protocol):
 
 
 class Scale(ABC):
-    """Pinpoints the possible values a score can take."""
+    """Defines the set of values a score can take."""
 
     @abstractmethod
     def validate(self, value: int | float | str):
-        """Raises an error if the value given does not fit in the Scale."""
+        """Raise an error if ``value`` does not belong to the scale."""
         ...
 
     @abstractmethod
     def normalize(self, value: int | float | str) -> float:
-        """Normalizes the value between 0 and 1."""
+        """Map ``value`` to the ``[0, 1]`` interval."""
         ...
 
 
 class Range(Scale):
-    """For continuous intervals of floats with a min and a max. I.e.: from 0 to 1."""
+    """Continuous numeric interval bounded by ``floor`` and ``ceiling``."""
 
-    def __init__(self, min: float, max: float):
-        if min > max:
-            raise ValueError("Are u dumb?")
-        self.min = min
-        self.max = max
+    def __init__(self, floor: float, ceiling: float):
+        if floor > ceiling:
+            raise ValueError
+        self.floor = floor
+        self.ceiling = ceiling
 
     def validate(self, value: float | int):
-        if not self.min <= value <= self.max:
+        if not self.floor <= value <= self.ceiling:
             raise ValueError
 
     def normalize(self, value: int | float) -> float:
-        return (value - self.min) / (self.max - self.min)
+        return (value - self.floor) / (self.ceiling - self.floor)
 
 
 class Ordinal(Scale):
-    """For any discrete (categorical or numerical) values.
+    """Discrete (categorical or numerical) values ordered worst to best.
 
-    Must be in order from worse to best, we assume same distance. E.g.:
-        - terrible, OK, fantastic
-        - 1, 2, 3, 4, 5
+    Adjacent values are assumed equidistant when normalizing.
+
+    Examples:
+        ``["terrible", "OK", "fantastic"]`` or ``[1, 2, 3, 4, 5]``.
+
+    Args:
+        levels: Allowed values, sorted from worst to best.
     """
 
-    def __init__(self, possible_values: list[str | int]):
-        self.possible_values = possible_values
+    def __init__(self, levels: list[str | int]):
+        self.levels = levels
 
     def validate(self, value: int | float | str):
-        if value not in self.possible_values:
+        if value not in self.levels:
             raise ValueError
 
     def normalize(self, value: int | float | str) -> float:
-        return self.possible_values.index(value) / (len(self.possible_values) - 1)
+        return self.levels.index(value) / (len(self.levels) - 1)
 
 
 @dataclass
 class Metric:
-    """Defines what is to measure."""
+    """Defines a single quantity to measure on a Trial.
+
+    Args:
+        name: Unique identifier used in aggregates.
+        description: Human-readable explanation of what is measured.
+        requires_reference: Whether ``Example.reference`` must be present.
+        scale: Scale used to validate and normalize raw scores.
+        scorer: Callable producing the score; deterministic or LLM-based.
+        judge_config: Required iff ``scorer`` is a ``StochasticScorer``.
+    """
 
     name: str
     description: str
     requires_reference: bool
     scale: Scale
     scorer: DeterministicScorer | StochasticScorer
-    judge_config: JudgeConfig | None = None  # required iff `scorer` is stochastic
+    judge_config: JudgeConfig | None = None
 
 
 @dataclass
 class Trial:
     """One execution of an Experiment against one Example.
 
-    Holds the full `CompletionResponse` so downstream code can read the model
-    output, latency, token counts, finish reason, etc., without having to
-    re-run the target.
+    Exactly one of ``response`` or ``error`` is set:
+
+    - On success, ``response`` holds the full ``CompletionResponse`` so
+      downstream code can read output, latency, token counts, finish reason,
+      etc., without re-running the target.
+    - On failure, ``error`` holds the exception raised by the target so the
+      run can continue and surface the failure in aggregates.
     """
 
     example: Example
-    response: CompletionResponse
     rendered_prompt: str
+    response: CompletionResponse | None = None
     error: Exception | None = None
 
 
@@ -205,14 +228,25 @@ class Scoring:
 
 
 @dataclass
-class DatasetResults:
-    """Summarizes the evaluation run across the whole dataset.
+class RunInfo:
+    """Captures when an experiment was executed and against which code version."""
 
-    Two parallel axes:
-      - `trials`: one per example. Telemetry aggregates (latency, output
-        tokens) iterate this list, so an example evaluated by N metrics is
-        not overcounted.
-      - `scorings`: |trials| × |metrics|. Quality aggregates iterate this.
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    version: str | None = None  # can be a commit sha, a tag, ...
+
+
+@dataclass
+class RunResults:
+    """Summary of one experiment run across a whole dataset.
+
+    Results are stored along two parallel axes:
+
+    - ``trials``: one entry per example. Telemetry aggregates (latency,
+      output tokens) iterate this list so an example evaluated by N metrics
+      is not overcounted.
+    - ``scorings``: ``|trials| × |metrics|``. Quality aggregates iterate this.
+
+    Telemetry aggregates skip failed trials (those with no ``response``).
     """
 
     experiment: Experiment
@@ -220,7 +254,9 @@ class DatasetResults:
     trials: list[Trial]
     scorings: list[Scoring]
 
-    # ---- quality aggregates --------------------------------------------
+    @property
+    def successful_trials(self) -> list[Trial]:
+        return [t for t in self.trials if t.succeeded]
 
     @property
     def mean_normalized(self) -> float:
@@ -228,38 +264,37 @@ class DatasetResults:
         return _mean(s.score.normalized for s in self.scorings)
 
     def per_example(self) -> dict[int, float]:
-        """Mean normalized score for each example (keyed by example id)."""
+        """Return mean normalized score per example, keyed by ``id(example)``."""
         return {
             id(ex): _mean(s.score.normalized for s in self.scorings if s.trial.example is ex)
             for ex in {id(s.trial.example): s.trial.example for s in self.scorings}.values()
         }
 
     def per_metric(self) -> dict[str, float]:
-        """Mean normalized score for each metric (keyed by metric name)."""
+        """Return mean normalized score per metric, keyed by metric name."""
         names = {s.metric.name for s in self.scorings}
         return {
             name: _mean(s.score.normalized for s in self.scorings if s.metric.name == name)
             for name in names
         }
 
-    # ---- telemetry aggregates ------------------------------------------
-
     @property
     def mean_latency(self) -> float:
-        """Average wall-clock latency across trials (seconds)."""
-        return _mean(t.response.latency for t in self.trials)
+        """Average wall-clock latency across successful trials, in seconds."""
+        return _mean(t.response.latency for t in self.successful_trials)
 
     @property
     def mean_output_tokens(self) -> float:
-        """Average output token count across trials."""
-        return _mean(t.response.output_tokens for t in self.trials)
+        """Average output token count across successful trials."""
+        return _mean(t.response.output_tokens for t in self.successful_trials)
 
     @property
     def total_output_tokens(self) -> int:
-        """Total output tokens consumed by the run."""
-        return sum(t.response.output_tokens for t in self.trials)
+        """Total output tokens consumed by successful trials."""
+        return sum(t.response.output_tokens for t in self.successful_trials)
 
 
 def _mean(values) -> float:
+    """Return the arithmetic mean of ``values``, or ``0.0`` if empty."""
     values = list(values)
     return sum(values) / len(values) if values else 0.0
