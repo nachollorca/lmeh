@@ -58,7 +58,7 @@ class TargetFunction(Protocol):
     ``CompletionResponse.completion_request.prompt`` (see ``Trial.rendered_prompt``).
     """
 
-    def __call__(
+    def __call__(  # noqa: D102
         self,
         inputs: dict[str, Any],
         model: str,
@@ -95,7 +95,7 @@ class Score:
 class DeterministicScorer(Protocol):
     """Signature of any deterministic (non-LLM) scoring function."""
 
-    def __call__(
+    def __call__(  # noqa: D102
         self,
         output: Any,
         example: Example,
@@ -117,7 +117,7 @@ class StochasticScorer(Protocol):
     the question and the model's answer.
     """
 
-    def __call__(
+    def __call__(  # noqa: D102
         self,
         output: Any,
         example: Example,
@@ -149,11 +149,15 @@ class Range(Scale):
         self.floor = floor
         self.ceiling = ceiling
 
-    def validate(self, value: float | int):
+    def validate(self, value: int | float | str):  # noqa: D102
+        if isinstance(value, str):
+            value = float(value)
         if not self.floor <= value <= self.ceiling:
             raise ValueError
 
-    def normalize(self, value: int | float) -> float:
+    def normalize(self, value: int | float | str) -> float:  # noqa: D102
+        if isinstance(value, str):
+            value = float(value)
         return (value - self.floor) / (self.ceiling - self.floor)
 
 
@@ -169,14 +173,14 @@ class Ordinal(Scale):
         levels: Allowed values, sorted from worst to best.
     """
 
-    def __init__(self, levels: list[str | int]):
+    def __init__(self, levels: list[str | int | float]):
         self.levels = levels
 
-    def validate(self, value: int | float | str):
+    def validate(self, value: int | float | str):  # noqa: D102
         if value not in self.levels:
             raise ValueError
 
-    def normalize(self, value: int | float | str) -> float:
+    def normalize(self, value: int | float | str) -> float:  # noqa: D102
         return self.levels.index(value) / (len(self.levels) - 1)
 
 
@@ -220,6 +224,7 @@ class Trial:
 
     @property
     def succeeded(self) -> bool:
+        """Marks if the trial executed without errors."""
         return self.response is not None and self.error is None
 
     @property
@@ -228,7 +233,11 @@ class Trial:
 
         ``None`` for failed trials, which have no response to inspect.
         """
-        return self.response.request.prompt if self.response else None
+        return (
+            self.response.request.prompt[0].content  # We assume just one prompt
+            if self.response and self.response.request
+            else None
+        )
 
 
 @dataclass
@@ -257,7 +266,7 @@ class RunResults:
     - ``trials``: one entry per example. Telemetry aggregates (latency,
       output tokens) iterate this list so an example evaluated by N metrics
       is not overcounted.
-    - ``scorings``: ``|trials| × |metrics|``. Quality aggregates iterate this.
+    - ``scorings``: ``|trials| * |metrics|``. Quality aggregates iterate this.
 
     Telemetry aggregates skip failed trials (those with no ``response``).
     """
@@ -269,7 +278,15 @@ class RunResults:
 
     @property
     def successful_trials(self) -> list[Trial]:
+        """List of trials executed without errors."""
         return [t for t in self.trials if t.succeeded]
+
+    @property
+    def successful_responses(self) -> list[CompletionResponse]:
+        """Non-null responses from successful trials."""
+        from typing import cast
+
+        return [cast(CompletionResponse, t.response) for t in self.successful_trials]
 
     @property
     def failure_rate(self) -> float:
@@ -299,17 +316,17 @@ class RunResults:
     @property
     def mean_latency(self) -> float:
         """Average wall-clock latency across successful trials, in seconds."""
-        return _mean(t.response.latency for t in self.successful_trials)
+        return _mean(r.latency for r in self.successful_responses)
 
     @property
     def mean_output_tokens(self) -> float:
         """Average output token count across successful trials."""
-        return _mean(t.response.output_tokens for t in self.successful_trials)
+        return _mean(r.output_tokens for r in self.successful_responses)
 
     @property
     def total_output_tokens(self) -> int:
         """Total output tokens consumed by successful trials."""
-        return sum(t.response.output_tokens for t in self.successful_trials)
+        return sum(r.output_tokens for r in self.successful_responses)
 
 
 def _mean(values) -> float:
