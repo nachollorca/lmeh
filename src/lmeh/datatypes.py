@@ -1,4 +1,18 @@
-"""Core data contracts shared across the harness."""
+"""Core data contracts shared across the harness.
+
+Conceptual flow:
+
+    Dataset -> Example
+    Experiment = TargetFunction + ExperimentConfig
+    Trial = result of running one Experiment on one Example
+    Metric = scoring definition
+    MetricResult = one Metric applied to one Trial
+    RunResults = all Trials and MetricResults from one Experiment run
+
+The harness keeps generation and scoring separate:
+- Trials store model execution results.
+- MetricResults store metric results.
+"""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -37,7 +51,8 @@ class ExperimentConfig:
 
     Args:
         model: Identifier of the model to call.
-        prompt_template: Jinja style template rendered into the user message.
+        prompt_template: Jinja-style template passed to the target, which is
+            responsible for rendering it into the final user message.
         generation_kwargs: Extra arguments forwarded to the model call.
         output_schema: Optional pydantic schema enforcing structured output.
     """
@@ -82,12 +97,12 @@ class Score:
     """The evaluation result for one example and one metric.
 
     Args:
-        value: Raw score in the metric's native scale.
-        normalized: ``value`` mapped to ``[0, 1]`` for cross-metric aggregation.
+        raw: Raw score in the metric's native scale.
+        normalized: ``raw`` mapped to ``[0, 1]`` for cross-metric aggregation.
         reason: Optional rationale (typically populated by LLM judges).
     """
 
-    value: int | float | str
+    raw: int | float | str
     normalized: float
     reason: str = ""
 
@@ -144,8 +159,8 @@ class Range(Scale):
     """Continuous numeric interval bounded by ``floor`` and ``ceiling``."""
 
     def __init__(self, floor: float, ceiling: float):
-        if floor > ceiling:
-            raise ValueError
+        if floor >= ceiling:
+            raise ValueError("Range floor must be lower than ceiling")
         self.floor = floor
         self.ceiling = ceiling
 
@@ -174,6 +189,10 @@ class Ordinal(Scale):
     """
 
     def __init__(self, levels: list[str | int | float]):
+        if len(levels) < 2:
+            raise ValueError("Ordinal scale requires at least two levels")
+        if len(set(levels)) != len(levels):
+            raise ValueError("Ordinal scale levels must be unique")
         self.levels = levels
 
     def validate(self, value: int | float | str):  # noqa: D102
@@ -194,7 +213,9 @@ class Metric:
         requires_reference: Whether ``Example.reference`` must be present.
         scale: Scale used to validate and normalize raw scores.
         scorer: Callable producing the score; deterministic or LLM-based.
-        judge_config: Required iff ``scorer`` is a ``StochasticScorer``.
+        judge_config: Required for LLM-judge metrics. If present, the harness
+            calls ``scorer`` as a ``StochasticScorer``; otherwise it calls it as
+            a ``DeterministicScorer``.
     """
 
     name: str
@@ -229,9 +250,10 @@ class Trial:
 
     @property
     def rendered_prompt(self) -> str | None:
-        """The exact prompt the target sent, recovered from the response.
+        """The exact user prompt sent by the target.
 
-        ``None`` for failed trials, which have no response to inspect.
+        The harness assumes targets send exactly one user message. ``None`` for
+        failed trials, which have no response to inspect.
         """
         return (
             self.response.request.prompt[0].content  # We assume just one prompt
@@ -241,8 +263,8 @@ class Trial:
 
 
 @dataclass
-class Scoring:
-    """One metric applied to one Trial."""
+class MetricResult:
+    """The result of applying one Metric to one Trial."""
 
     trial: Trial
     metric: Metric
@@ -266,7 +288,7 @@ class RunResults:
     - ``trials``: one entry per example. Telemetry aggregates (latency,
       output tokens) iterate this list so an example evaluated by N metrics
       is not overcounted.
-    - ``scorings``: ``|trials| * |metrics|``. Quality aggregates iterate this.
+    - ``metric_results``: ``|trials| * |metrics|``. Quality aggregates iterate this.
 
     Telemetry aggregates skip failed trials (those with no ``response``).
     """
@@ -274,7 +296,7 @@ class RunResults:
     experiment: Experiment
     run: RunInfo
     trials: list[Trial]
-    scorings: list[Scoring]
+    metric_results: list[MetricResult]
 
     @property
     def successful_trials(self) -> list[Trial]:
@@ -295,21 +317,21 @@ class RunResults:
 
     @property
     def mean_normalized(self) -> float:
-        """Average normalized score across every scoring."""
-        return _mean(s.score.normalized for s in self.scorings)
+        """Average normalized score across every metric result."""
+        return _mean(r.score.normalized for r in self.metric_results)
 
     def per_example(self) -> dict[int, float]:
         """Return mean normalized score per example, keyed by ``id(example)``."""
         return {
-            id(ex): _mean(s.score.normalized for s in self.scorings if s.trial.example is ex)
-            for ex in {id(s.trial.example): s.trial.example for s in self.scorings}.values()
+            id(ex): _mean(r.score.normalized for r in self.metric_results if r.trial.example is ex)
+            for ex in {id(r.trial.example): r.trial.example for r in self.metric_results}.values()
         }
 
     def per_metric(self) -> dict[str, float]:
         """Return mean normalized score per metric, keyed by metric name."""
-        names = {s.metric.name for s in self.scorings}
+        names = {r.metric.name for r in self.metric_results}
         return {
-            name: _mean(s.score.normalized for s in self.scorings if s.metric.name == name)
+            name: _mean(r.score.normalized for r in self.metric_results if r.metric.name == name)
             for name in names
         }
 
