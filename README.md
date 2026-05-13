@@ -98,8 +98,8 @@ Built-in scale types:
 flowchart TD
     RR[RunResults]
     RR --> Info[RunInfo: timestamp/version]
-    RR --> Trials[list[Trial]]
-    RR --> Metrics[list[MetricResult]]
+    RR --> Trials["list[Trial]"]
+    RR --> Metrics["list[MetricResult]"]
     Trials --> Telemetry[latency/tokens/failure_rate]
     Metrics --> Quality[mean_normalized/per_metric/per_example]
 ```
