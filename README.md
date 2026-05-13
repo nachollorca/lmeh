@@ -1,4 +1,4 @@
-# LMEH data contracts
+# Language Model Evaluation Harness
 
 LMEH separates **generation** from **scoring**. A target function runs a model and produces trials; metrics score those trials afterwards. This keeps model-calling code, judge code, and reporting code independent.
 
@@ -118,3 +118,8 @@ Trials + MetricResults -> RunResults
 ```
 
 That is the core contract: targets generate, metrics score, and run results summarize both without mixing their responsibilities.
+
+## License
+MIT
+
+_Made with (mold)[https://github.com/nachollorca/mold]_
