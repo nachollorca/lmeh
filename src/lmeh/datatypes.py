@@ -10,7 +10,7 @@ Conceptual flow:
     RunResults = all Trials and MetricResults from one Experiment run
 
 The harness keeps generation and scoring separate:
-- Trials store model execution results.
+- Trials store target execution results.
 - MetricResults store metric results.
 """
 
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from lmdk import CompletionResponse
+from lmdk import CompletionRequest, CompletionResponse
 from pydantic import BaseModel
 
 
@@ -31,7 +31,10 @@ class Example:
     hence ``reference`` is optional.
 
     Args:
-        inputs: Variables to process into the prompt template.
+        inputs: Arbitrary inputs the target needs — domain objects, raw text,
+            whatever the production caller would pass. The target decides how
+            to turn these into a prompt; the harness never renders templates
+            on its behalf.
         reference: Expected output, if available.
     """
 
@@ -57,20 +60,58 @@ class ExperimentConfig:
         output_schema: Optional pydantic schema enforcing structured output.
     """
 
-    model: str
-    prompt_template: str
-    generation_kwargs: dict[str, Any] | None = None
-    output_schema: type[BaseModel] | None = None
+    model: str  # not sweepable over search space
+    prompt_template: str  # sweepable
+    generation_kwargs: dict[str, Any] | None = None  # sweepable
+    output_schema: type[BaseModel] | None = None  # not sweepable
+
+
+@dataclass(frozen=True)
+class TargetOutput:
+    """What every ``TargetFunction`` must return.
+
+    Separates the three things the harness cares about:
+
+    - ``response``: the raw ``CompletionResponse`` from ``lmdk``. Carries the
+      originating ``CompletionRequest`` on ``response.request`` (i.e. the
+      final, fully-rendered prompt and kwargs that were sent to the model),
+      along with telemetry (latency, token counts, finish reason, native
+      ``output`` parsed/unparsed). Treated as immutable by the harness.
+    - ``output``: the post-processed product the function actually wants to
+      expose. Scorers consume this. If the target does no post-processing,
+      it equals ``response.output``.
+
+    Use ``TargetOutput.passthrough(response)`` for the no-postprocessing case.
+    """
+
+    response: CompletionResponse
+    output: Any
+
+    @property
+    def request(self) -> CompletionRequest | None:
+        """Shortcut to ``response.request``: the final request sent to the LM."""
+        return self.response.request
+
+    @classmethod
+    def passthrough(cls, response: CompletionResponse) -> "TargetOutput":
+        """Build a ``TargetOutput`` with no post-processing applied."""
+        return cls(response=response, output=response.output)
 
 
 class TargetFunction(Protocol):
     """The shape every function under evaluation must follow.
 
-    The target is the sole owner of prompt rendering: it transforms ``inputs``,
-    renders them into ``prompt_template``, and dispatches the result as a
-    single user message. The harness never re-renders the template; it reads
-    the exact string the target sent back off
-    ``CompletionResponse.completion_request.prompt`` (see ``Trial.rendered_prompt``).
+    A target is a function that achieves a goal using **exactly one** LM
+    completion. It may run arbitrary deterministic code before the call to
+    prepare the prompt (e.g. format inputs, render the template) and after
+    the call to refine the model's response (e.g. parse, validate, repair).
+    Chains of multiple LM calls are out of scope.
+
+    The target is the sole owner of prompt rendering: it transforms
+    ``inputs``, renders them into ``prompt_template``, and dispatches the
+    result as a single user message. The harness never re-renders the
+    template; it reads the exact string the target sent back off
+    ``TargetOutput.request.prompt`` (see ``Trial.rendered_prompt``).
     """
 
     def __call__(  # noqa: D102
@@ -80,7 +121,7 @@ class TargetFunction(Protocol):
         prompt_template: str,
         generation_kwargs: dict | None = None,
         output_schema: type[BaseModel] | None = None,
-    ) -> CompletionResponse: ...
+    ) -> TargetOutput: ...
 
 
 @dataclass
@@ -230,23 +271,24 @@ class Metric:
 class Trial:
     """One execution of an Experiment against one Example.
 
-    Exactly one of ``response`` or ``error`` is set:
+    Exactly one of ``result`` or ``error`` is set:
 
-    - On success, ``response`` holds the full ``CompletionResponse`` so
-      downstream code can read output, latency, token counts, finish reason,
-      etc., without re-running the target.
+    - On success, ``result`` holds the ``TargetOutput`` returned by the
+      target, so downstream code can read the post-processed output, the raw
+      response, latency, token counts, finish reason, etc., without re-running
+      the target.
     - On failure, ``error`` holds the exception raised by the target so the
       run can continue and surface the failure in aggregates.
     """
 
     example: Example
-    response: CompletionResponse | None = None
+    result: TargetOutput | None = None
     error: Exception | None = None
 
     @property
     def succeeded(self) -> bool:
         """Marks if the trial executed without errors."""
-        return self.response is not None and self.error is None
+        return self.result is not None and self.error is None
 
     @property
     def rendered_prompt(self) -> str | None:
@@ -255,11 +297,8 @@ class Trial:
         The harness assumes targets send exactly one user message. ``None`` for
         failed trials, which have no response to inspect.
         """
-        return (
-            self.response.request.prompt[0].content  # We assume just one prompt
-            if self.response and self.response.request
-            else None
-        )
+        request = self.result.request if self.result else None
+        return request.prompt[0].content if request else None  # We assume just one prompt
 
 
 @dataclass
@@ -305,10 +344,10 @@ class RunResults:
 
     @property
     def successful_responses(self) -> list[CompletionResponse]:
-        """Non-null responses from successful trials."""
+        """Raw LM responses from successful trials."""
         from typing import cast
 
-        return [cast(CompletionResponse, t.response) for t in self.successful_trials]
+        return [cast(TargetOutput, t.result).response for t in self.successful_trials]
 
     @property
     def failure_rate(self) -> float:

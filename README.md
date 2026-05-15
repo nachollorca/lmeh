@@ -1,5 +1,9 @@
 # Language Model Evaluation Harness
 
+`lmeh` evaluates *functions that use an LM* to accomplish a goal, not bare completion calls.
+A `TargetFunction` is expected to perform exactly one LM completion, optionally surrounded by arbitrary deterministic code that prepares the prompt (pre-processing) and refines the model's output (post-processing).
+The harness treats the target as a black box: scorers see what the function *returns* via `TargetOutput.output`, while telemetry is read from the underlying `CompletionResponse`.
+
 LMEH separates **generation** from **scoring**. A target function runs a model and produces trials; metrics score those trials afterwards. This keeps model-calling code, judge code, and reporting code independent.
 
 ## 1. The cast
