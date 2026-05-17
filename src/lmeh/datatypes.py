@@ -12,6 +12,13 @@ Conceptual flow:
 The harness keeps generation and scoring separate:
 - Trials store target execution results.
 - Scorings store metric results.
+
+This module is organized in two halves:
+
+1. Types the *user* defines or constructs when wiring up an evaluation
+   (examples, targets, metrics, scales).
+2. Types the *harness* produces and the user only reads (trials, scorings,
+   run results).
 """
 
 from abc import ABC, abstractmethod
@@ -21,6 +28,10 @@ from typing import Any, Protocol
 
 from lmdk import CompletionRequest, CompletionResponse
 from pydantic import BaseModel
+
+# ---------------------------------------------------------------------------
+# Inputs: things the user defines
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -131,53 +142,9 @@ class Experiment:
     config: TargetConfig
 
 
-@dataclass
-class Score:
-    """The evaluation result for one example and one metric.
-
-    Args:
-        raw: Raw score in the metric's native scale.
-        normalized: ``raw`` mapped to ``[0, 1]`` for cross-metric aggregation.
-        reason: Optional rationale (typically populated by LLM judges).
-    """
-
-    raw: int | float | str
-    normalized: float
-    reason: str = ""
-
-
-class ProgrammaticScorer(Protocol):
-    """Signature of any programmatic (non-LLM) scoring function."""
-
-    def __call__(  # noqa: D102
-        self,
-        output: Any,
-        example: Example,
-    ) -> Score: ...
-
-
-@dataclass
-class JudgeConfig:
-    """The knobs of an LLM judge, kept separate from the target's config."""
-
-    model: str
-    generation_kwargs: dict[str, Any] | None = None
-
-
-class LLMJudgeScorer(Protocol):
-    """Signature of any LLM-judge scoring function.
-
-    Receives the rendered target prompt so the judge can reason about both
-    the question and the model's answer.
-    """
-
-    def __call__(  # noqa: D102
-        self,
-        output: Any,
-        example: Example,
-        config: JudgeConfig,
-        rendered_prompt: str,
-    ) -> Score: ...
+# ---------------------------------------------------------------------------
+# Scoring: scales, scores, scorers, metrics
+# ---------------------------------------------------------------------------
 
 
 class Scale(ABC):
@@ -243,6 +210,55 @@ class Ordinal(Scale):
 
 
 @dataclass
+class Score:
+    """The evaluation result for one example and one metric.
+
+    Args:
+        raw: Raw score in the metric's native scale.
+        normalized: ``raw`` mapped to ``[0, 1]`` for cross-metric aggregation.
+        reason: Optional rationale (typically populated by LLM judges).
+    """
+
+    raw: int | float | str
+    normalized: float
+    reason: str = ""
+
+
+class ProgrammaticScorer(Protocol):
+    """Signature of any programmatic (non-LLM) scoring function."""
+
+    def __call__(  # noqa: D102
+        self,
+        output: Any,
+        example: Example,
+    ) -> Score: ...
+
+
+@dataclass
+class JudgeConfig:
+    """The knobs of an LLM judge, kept separate from the target's config."""
+
+    model: str
+    generation_kwargs: dict[str, Any] | None = None
+
+
+class LLMJudgeScorer(Protocol):
+    """Signature of any LLM-judge scoring function.
+
+    Receives the rendered target prompt so the judge can reason about both
+    the question and the model's answer.
+    """
+
+    def __call__(  # noqa: D102
+        self,
+        output: Any,
+        example: Example,
+        config: JudgeConfig,
+        rendered_prompt: str,
+    ) -> Score: ...
+
+
+@dataclass
 class Metric:
     """Defines a single quantity to measure on a Trial.
 
@@ -261,6 +277,11 @@ class Metric:
     scale: Scale
     scorer: ProgrammaticScorer | LLMJudgeScorer
     judge_config: JudgeConfig | None = None
+
+
+# ---------------------------------------------------------------------------
+# Outputs: things the harness produces (users read, rarely construct)
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -314,7 +335,7 @@ class SuccessfulScoring:
     """
 
     trial: Trial
-    metric: "Metric"
+    metric: Metric
     score: Score
 
 
@@ -326,7 +347,7 @@ class FailedScoring:
     """
 
     trial: Trial
-    metric: "Metric"
+    metric: Metric
     error: Exception
 
 
