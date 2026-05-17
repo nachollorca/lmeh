@@ -14,6 +14,7 @@ total functions: they never raise, instead wrapping failures into
 
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import cast
 
 from pydantic import BaseModel
 
@@ -23,7 +24,9 @@ from .datatypes import (
     Experiment,
     FailedScoring,
     FailedTrial,
+    LLMJudgeScorer,
     Metric,
+    ProgrammaticScorer,
     RunInfo,
     RunResults,
     Score,
@@ -143,9 +146,11 @@ def score_metric(trial: Trial, metric: Metric) -> Scoring:
 
     try:
         if metric.judge_config is None:
-            score = metric.scorer(trial.result.output, trial.example)  # type: ignore[call-arg]
+            programmatic = cast(ProgrammaticScorer, metric.scorer)
+            score = programmatic(trial.result.output, trial.example)
         else:
-            score = metric.scorer(  # type: ignore[call-arg]
+            judge = cast(LLMJudgeScorer, metric.scorer)
+            score = judge(
                 trial.result.output,
                 trial.example,
                 metric.judge_config,
