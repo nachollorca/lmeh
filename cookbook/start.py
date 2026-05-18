@@ -162,8 +162,7 @@ def _(correctness, trial):
     from lmeh.execution import score_metric
 
     scoring = score_metric(trial=trial, metric=correctness)
-
-    print(scoring.score)
+    scoring.score
     return (score_metric,)
 
 
@@ -186,7 +185,7 @@ def _(Metric, Ordinal):
     )
 
     correctness_2 = Metric(
-        name="correctness",
+        name="correctness2",
         description="whether the answer is correct or not",
         scale=Ordinal(levels=[False, True]),
         scorer=default_llm_judge,
@@ -207,6 +206,49 @@ def _(mo):
 def _(correctness_2, score_metric, trial):
     judge_scoring = score_metric(trial=trial, metric=correctness_2)
     judge_scoring.score
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    Finally, we can make a full run: execute our `detect_hate` target function on all the examples from our dataset and evaluate our two metrics on the outputs.
+    """)
+    return
+
+
+@app.cell
+def _(config, correctness, correctness_2, dataset, detect_hate):
+    from lmeh.execution import run_experiment
+    from lmeh.datatypes import Experiment
+
+    experiment = Experiment(
+        name="silly-test",
+        target=detect_hate,
+        config=config
+    )
+
+    results = run_experiment(
+        experiment=experiment,
+        dataset=dataset,
+        metrics=[correctness, correctness_2],
+        workers=5
+    )
+    return (results,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    And we can use a reporting utility to see the results.
+    """)
+    return
+
+
+@app.cell
+def _(mo, results):
+    from lmeh.reporting import markdown_report
+    mo.md(markdown_report(results))
     return
 
 
