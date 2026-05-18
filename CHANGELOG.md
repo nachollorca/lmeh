@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-05-18)
+
+### Continuous Integration
+
+- Ignore notes
+  ([`66103a4`](https://github.com/nachollorca/lmeh/commit/66103a49cec203dddf46fc5e41077d86083db3b5))
+
+### Documentation
+
+- Run a full experiment on the getting started notebook
+  ([`a7b7991`](https://github.com/nachollorca/lmeh/commit/a7b79914406162c76670b8f90a3d14e81cf4fe62))
+
+### Features
+
+- **reporting**: Make a markdown report of the run results
+  ([`27fb561`](https://github.com/nachollorca/lmeh/commit/27fb561c58197cca4e91fa3c22053d139c23f9a7))
+
+### Refactoring
+
+- **metrics-and-config**: Split into LLMJudge and ProgramaticMetric, get prompt_template out of
+  Config, unify TargetConfig and JudgeConfig
+  ([`3075799`](https://github.com/nachollorca/lmeh/commit/30757993422bf63fee153fc553087e1d6eff70a5))
+
+
 ## v1.2.0 (2026-05-18)
 
 ### Documentation
