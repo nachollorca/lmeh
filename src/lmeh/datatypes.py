@@ -234,11 +234,52 @@ class ProgrammaticScorer(Protocol):
     ) -> Score: ...
 
 
+default_judge_template = """
+You will be acting as an expert judge to evaluate the result produced by an LLM-based function.
+Your task is to assess and score how well the result meets the specified evaluation metric.
+
+Here is the original prompt that was sent to the LLM:
+
+<rendered_prompt>
+{{RENDERED_PROMPT}}
+</rendered_prompt>
+
+Here is the result that was obtained from the LLM:
+
+<output>
+{{OUTPUT}}
+</output>
+
+{% if REFERENCE %}
+This is the golden-standard expected reference:
+
+<reference>
+{{REFERENCE}}
+</reference>
+{% endif %}
+
+And this is the specific metric you should use to evaluate the result:
+
+<metric>
+{{METRIC}}
+</metric>
+
+Now go ahead and score the result obtained by the LLM function for the given metric.""".strip()
+
+
 @dataclass
 class JudgeConfig:
-    """The knobs of an LLM judge, kept separate from the target's config."""
+    """The knobs of an LLM judge, kept separate from the target's config.
+
+    Args:
+        model: Identifier of the judge model.
+        prompt_template: Jinja-style template the judge renders before
+            calling the model. Defaults to ``default_judge_template``.
+        generation_kwargs: Extra arguments forwarded to the judge call.
+    """
 
     model: str
+    prompt_template: str = default_judge_template
     generation_kwargs: dict[str, Any] | None = None
 
 
@@ -253,6 +294,7 @@ class LLMJudgeScorer(Protocol):
         self,
         output: Any,
         example: Example,
+        metric: "Metric",
         config: JudgeConfig,
         rendered_prompt: str,
     ) -> Score: ...

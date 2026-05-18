@@ -1,20 +1,20 @@
 {
     "cells": [
         {
-            "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+            "code_hash": "43fe62a87bb3fd4a4680823995f57b2e",
             "console": [],
             "id": "Hbol",
             "outputs": [
                 {
                     "data": {
-                        "text/plain": ""
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"get-started\">Get started</h1></span>"
                     },
                     "type": "data"
                 }
             ]
         },
         {
-            "code_hash": "8dd910c9f08f170284dbd3b1984db4d2",
+            "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
             "console": [],
             "id": "MJUe",
             "outputs": [
@@ -27,20 +27,20 @@
             ]
         },
         {
-            "code_hash": "e53810554a78ff8de6fd41f0ab113e23",
+            "code_hash": "eed8a2dab4bc8255014a107f121f1f21",
             "console": [],
             "id": "vblA",
             "outputs": [
                 {
                     "data": {
-                        "text/plain": ""
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Let's start with a basic example. The task is <strong>text classification</strong>. In particular, we want to find out whether some social media comments contain hate speech or not.</span>\n<span class=\"paragraph\">We define some examples to begin with:</span></span>"
                     },
                     "type": "data"
                 }
             ]
         },
         {
-            "code_hash": "45fbb5a88c481962aaf4e5d7908d920b",
+            "code_hash": "408d2f86c7ddf7f8d709ec0e86e3b61b",
             "console": [],
             "id": "bkHC",
             "outputs": [
@@ -53,16 +53,22 @@
             ]
         },
         {
-            "code_hash": "a2eaea3ddedaa1235652ef6a558e1e1a",
-            "console": [
-                {
-                    "mimetype": "text/plain",
-                    "name": "stdout",
-                    "text": "is_hate=True reason=\"The comment contains a direct personal insult ('ugly') targeting an individual's physical appearance, which is a form of hate speech as it degrades and demeans the person.\"\n",
-                    "type": "stream"
-                }
-            ],
+            "code_hash": "90f89fa4c35980eb37da05eed7f1275b",
+            "console": [],
             "id": "lEQa",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Now, we define the target function that performs the classification. Its outputs are the ones we will evaluate.</span>\n<span class=\"paragraph\">The function must adhere to the <code>TargetFunction</code> protocol: take <strong>some inputs</strong> and the <strong>LM config</strong>, then return a <code>TargetOutput</code>.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "11e0ab2f5dbd2fc2101ed4cf84b8f35a",
+            "console": [],
+            "id": "PKri",
             "outputs": [
                 {
                     "data": {
@@ -73,13 +79,98 @@
             ]
         },
         {
-            "code_hash": "e5d2054a7b52be3c1767b96cd582d8ef",
+            "code_hash": "a286e7bce1e6eae71b448eb3e957d11c",
             "console": [],
-            "id": "PKri",
+            "id": "Xref",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Now, lets define the config under test. These are the moving parts that we want to evaluate and optimize: the model, prompt template, output schema, generation kwargs, etc.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "ff46603bdb07d992b2ac7f59e878bf9f",
+            "console": [],
+            "id": "SFPL",
             "outputs": [
                 {
                     "data": {
                         "text/plain": ""
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "ff88d5a803e95fed4dc968fccc3e4ce6",
+            "console": [],
+            "id": "BYtC",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">With these ingredients, we can already run a trial: execute the target function with one of the examples and the config under test.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "40fe9cb0ff16287da4eecb37ad24d27b",
+            "console": [
+                {
+                    "mimetype": "text/plain",
+                    "name": "stdout",
+                    "text": "is_hate=True reason=\"The comment contains a personal attack based on appearance, which is a form of hate speech as it targets an individual's physical attributes in a derogatory manner.\"\n",
+                    "type": "stream"
+                }
+            ],
+            "id": "RGSE",
+            "outputs": [
+                {
+                    "data": {
+                        "text/plain": ""
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "4f60887e51b0990aea3498254f41bfd9",
+            "console": [],
+            "id": "Kclp",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Now that our trial run successfully, we can jump into the quality measurements.</span>\n<span class=\"paragraph\">Let's define a silly metric that simply compares the output from the function for the given example against the reference (our truth value).</span>\n<span class=\"paragraph\">For this, we do not need to use a <code>LLMJudgeScorer</code>. A deterministic scorer is more than enough. It must follow the <code>ProgrammaticScorer</code> protocol. We define the possible values using the <code>Ordinal</code> scale.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "e3450c87c25c0d2dd6871b6298e66c6a",
+            "console": [],
+            "id": "emfo",
+            "outputs": [
+                {
+                    "data": {
+                        "text/plain": ""
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "42d29cf768ff9d0f83891d3b2c29dede",
+            "console": [],
+            "id": "Hstk",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Finally, we can just score the trial against the metric.</span></span>"
                     },
                     "type": "data"
                 }
@@ -95,7 +186,7 @@
                     "type": "stream"
                 }
             ],
-            "id": "Xref",
+            "id": "nWHF",
             "outputs": [
                 {
                     "data": {
@@ -106,10 +197,59 @@
             ]
         },
         {
-            "code_hash": null,
+            "code_hash": "d654c001a7082726a899c3273e0a8948",
             "console": [],
-            "id": "SFPL",
-            "outputs": []
+            "id": "iLit",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">For the sake of playing, we could also make an LLM Judge that evaluates the same and gives a brief explanation. You can use the default one or create one that adheres to the <code>LLMJudgeScorer</code> protocol.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "52f61d49821f6369da45b86f2a249c51",
+            "console": [],
+            "id": "ZHCJ",
+            "outputs": [
+                {
+                    "data": {
+                        "text/plain": ""
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "34f6d898bb0d7751df989373e1f462ff",
+            "console": [],
+            "id": "ROlb",
+            "outputs": [
+                {
+                    "data": {
+                        "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Lets evaluate it on the same example and see what the Judge thinks about the system output.</span></span>"
+                    },
+                    "type": "data"
+                }
+            ]
+        },
+        {
+            "code_hash": "683e4603d07befe1ba1cd035329ac08e",
+            "console": [],
+            "id": "qnkX",
+            "outputs": [
+                {
+                    "data": {
+                        "application/vnd.marimo+mimebundle": {
+                            "image/png": "data:image/png;base64,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",
+                            "text/html": "<pre class='text-xs'>Score(raw=True, normalized=1.0, reason=&quot;The result obtained from the LLM function is correct. The comment &#x27;I think you are pretty ugly&#x27; is indeed identified as hate speech, which aligns with the golden-standard expected reference of &#x27;True&#x27;. The reasoning provided also accurately explains why the comment is considered hate speech, as it involves a personal attack based on appearance.&quot;)</pre>"
+                        }
+                    },
+                    "type": "data"
+                }
+            ]
         }
     ],
     "metadata": {

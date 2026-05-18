@@ -153,6 +153,7 @@ def score_metric(trial: Trial, metric: Metric) -> Scoring:
             score = judge(
                 trial.result.output,
                 trial.example,
+                metric,
                 metric.judge_config,
                 trial.rendered_prompt,
             )
