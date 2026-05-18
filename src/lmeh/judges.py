@@ -25,7 +25,7 @@ from typing import Any, Literal
 from lmdk import complete, render_template
 from pydantic import BaseModel, ConfigDict, create_model
 
-from lmeh.datatypes import Example, JudgeConfig, Metric, Ordinal, Range, Scale, Score
+from lmeh.datatypes import Example, LLMJudgeMetric, LMConfig, Ordinal, Range, Scale, Score
 
 
 def _schema_for_scale(scale: Scale) -> type[BaseModel]:
@@ -54,8 +54,8 @@ def _schema_for_scale(scale: Scale) -> type[BaseModel]:
 def default_llm_judge(
     output: Any,
     example: Example,
-    metric: Metric,
-    config: JudgeConfig,
+    metric: LLMJudgeMetric,
+    config: LMConfig,
     rendered_prompt: str,
 ) -> Score:
     """Render the judge template, call the model, return a ``Score``.
@@ -66,7 +66,7 @@ def default_llm_judge(
     """
     schema = _schema_for_scale(metric.scale)
     prompt = render_template(
-        template=config.prompt_template,
+        template=metric.prompt_template,
         RENDERED_PROMPT=rendered_prompt,
         OUTPUT=str(output),
         REFERENCE=example.reference,

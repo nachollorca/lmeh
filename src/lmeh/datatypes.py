@@ -3,9 +3,9 @@
 Conceptual flow:
 
     Dataset -> Example
-    Experiment = TargetFunction + TargetConfig
+    Experiment = TargetFunction + prompt_template + LMConfig
     Trial = result of running one Experiment on one Example
-    Metric = scoring definition
+    Metric = what we want to measure
     Scoring = one Metric applied to one Trial
     RunResults = all Trials and Scorings from one Experiment run
 
@@ -43,9 +43,9 @@ class Example:
 
     Args:
         inputs: Arbitrary inputs the target needs — domain objects, raw text,
-            whatever the production caller would pass. The target decides how
-            to turn these into a prompt; the harness never renders templates
-            on its behalf.
+            whatever the production caller would pass. Unpacked as keyword
+            arguments into the ``TargetFunction``; the keys must match the
+            target's parameter names.
         reference: Expected output, if available.
     """
 
@@ -58,24 +58,21 @@ Dataset = list[Example]
 
 
 @dataclass
-class TargetConfig:
-    """The moving pieces of a ``TargetFunction`` that the harness can sweep.
+class LMConfig:
+    """How to invoke a language model.
 
-    A ``TargetFunction`` receives an instance of this config plus the
-    per-example ``inputs`` it must render into ``prompt_template``.
+    Uniform across target, judge, and (future) optimizer call sites — none
+    of them need anything more than this to dispatch a completion.
 
     Args:
         model: Identifier of the model to call.
-        prompt_template: Jinja-style template passed to the target, which is
-            responsible for rendering it into the final user message.
         generation_kwargs: Extra arguments forwarded to the model call.
         output_schema: Optional pydantic schema enforcing structured output.
     """
 
-    model: str  # not sweepable over search space
-    prompt_template: str  # sweepable
-    generation_kwargs: dict[str, Any] | None = None  # sweepable
-    output_schema: type[BaseModel] | None = None  # not sweepable
+    model: str
+    generation_kwargs: dict[str, Any] | None = None
+    output_schema: type[BaseModel] | None = None
 
 
 @dataclass(frozen=True)
@@ -118,28 +115,25 @@ class TargetFunction(Protocol):
     prepare the prompt (e.g. format inputs, render the template) and after
     the call to refine the model's response (e.g. parse, validate, repair).
     Chains of multiple LM calls are out of scope.
-
-    The target is the sole owner of prompt rendering: it transforms
-    ``inputs``, renders them into ``config.prompt_template``, and dispatches
-    the result as a single user message. The harness never re-renders the
-    template; it reads the exact string the target sent back off
-    ``TargetOutput.request.prompt`` (see ``Trial.rendered_prompt``).
     """
 
     def __call__(  # noqa: D102
         self,
-        inputs: dict[str, Any],
-        config: TargetConfig,
+        *,
+        prompt_template: str,
+        config: LMConfig,
+        **inputs: Any,
     ) -> TargetOutput: ...
 
 
 @dataclass
 class Experiment:
-    """A named target paired with the configuration under test."""
+    """A named target plus the prompt and LM config under test."""
 
     name: str
     target: TargetFunction
-    config: TargetConfig
+    prompt_template: str
+    config: LMConfig
 
 
 # ---------------------------------------------------------------------------
@@ -267,58 +261,72 @@ And this is the specific metric you should use to evaluate the result:
 Now go ahead and score the result obtained by the LLM function for the given metric.""".strip()
 
 
-@dataclass
-class JudgeConfig:
-    """The knobs of an LLM judge, kept separate from the target's config.
-
-    Args:
-        model: Identifier of the judge model.
-        prompt_template: Jinja-style template the judge renders before
-            calling the model. Defaults to ``default_judge_template``.
-        generation_kwargs: Extra arguments forwarded to the judge call.
-    """
-
-    model: str
-    prompt_template: str = default_judge_template
-    generation_kwargs: dict[str, Any] | None = None
-
-
 class LLMJudgeScorer(Protocol):
     """Signature of any LLM-judge scoring function.
 
     Receives the rendered target prompt so the judge can reason about both
-    the question and the model's answer.
+    the question and the model's answer. The judge's own prompt template
+    lives on ``LLMJudgeMetric.prompt_template``; the judge's model and gen kwargs
+    live on ``config``.
     """
 
     def __call__(  # noqa: D102
         self,
         output: Any,
         example: Example,
-        metric: "Metric",
-        config: JudgeConfig,
+        metric: "LLMJudgeMetric",
+        config: LMConfig,
         rendered_prompt: str,
     ) -> Score: ...
 
 
 @dataclass
-class Metric:
-    """Defines a single quantity to measure on a Trial.
+class ProgrammaticMetric:
+    """A metric whose scorer is plain Python.
 
     Args:
         name: Unique identifier used in aggregates.
         description: Human-readable explanation of what is measured.
         scale: Scale used to validate and normalize raw scores.
-        scorer: Callable producing the score; deterministic or LLM-based.
-        judge_config: Required for LLM-judge metrics. If present, the harness
-            calls ``scorer`` as an ``LLMJudgeScorer``; otherwise it calls it as
-            a ``ProgrammaticScorer``.
+        scorer: callable that produces the score for the given output.
     """
 
     name: str
     description: str
     scale: Scale
-    scorer: ProgrammaticScorer | LLMJudgeScorer
-    judge_config: JudgeConfig | None = None
+    scorer: ProgrammaticScorer
+
+
+@dataclass
+class LLMJudgeMetric:
+    """A metric scored by an LLM judge.
+
+    Args:
+        name: Unique identifier used in aggregates.
+        description: Human-readable explanation of what is measured. The
+            default judge surfaces this to the judging model as ``METRIC``.
+        scale: Scale used to validate and normalize raw scores.
+        scorer: LLM-judge callable producing the score.
+        config: How to invoke the judge model (model id, gen kwargs,
+            optional output schema).
+        prompt_template: Jinja-style template the judge renders before
+            calling the model. Defaults to ``default_judge_template``.
+    """
+
+    name: str
+    description: str
+    scale: Scale
+    scorer: LLMJudgeScorer
+    config: LMConfig
+    prompt_template: str = default_judge_template
+
+
+Metric = ProgrammaticMetric | LLMJudgeMetric
+"""Tagged union of metric kinds.
+
+Dispatch with ``isinstance`` — the two variants carry different state
+(only ``LLMJudgeMetric`` needs a model and a judge template).
+"""
 
 
 # ---------------------------------------------------------------------------
