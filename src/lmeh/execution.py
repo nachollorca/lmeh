@@ -14,7 +14,6 @@ total functions: they never raise, instead wrapping failures into
 
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import cast
 
 from pydantic import BaseModel
 
@@ -24,16 +23,16 @@ from .datatypes import (
     Experiment,
     FailedScoring,
     FailedTrial,
-    LLMJudgeScorer,
+    LLMJudgeMetric,
+    LMConfig,
     Metric,
-    ProgrammaticScorer,
+    ProgrammaticMetric,
     RunInfo,
     RunResults,
     Score,
     Scoring,
     SuccessfulScoring,
     SuccessfulTrial,
-    TargetConfig,
     TargetFunction,
     Trial,
 )
@@ -89,7 +88,14 @@ def stream_experiment(
 
     with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
         trial_futures: dict[Future[Trial], Example] = {
-            pool.submit(run_trial, experiment.target, experiment.config, ex): ex for ex in dataset
+            pool.submit(
+                run_trial,
+                experiment.target,
+                experiment.prompt_template,
+                experiment.config,
+                ex,
+            ): ex
+            for ex in dataset
         }
         score_futures: list[Future[Scoring]] = []
 
@@ -98,8 +104,8 @@ def stream_experiment(
             yield trial
 
             for metric in metrics:
-                if metric.judge_config is None:
-                    # Programmatic: cheap, run inline and yield immediately.
+                if isinstance(metric, ProgrammaticMetric):
+                    # Cheap, run inline and yield immediately.
                     yield score_metric(trial, metric)
                 else:
                     # LLM judge: I/O-bound, offload to the pool.
@@ -111,17 +117,21 @@ def stream_experiment(
 
 def run_trial(
     target: TargetFunction,
-    config: TargetConfig,
+    prompt_template: str,
+    config: LMConfig,
     example: Example,
 ) -> Trial:
     """Execute ``target`` against one ``example``.
+
+    ``example.inputs`` is unpacked as keyword arguments, so the target's
+    parameter names must match the dict keys.
 
     Total function: any exception raised by the target is captured into a
     :class:`FailedTrial`. The target is what is under evaluation, so its
     failures are data, not bugs in the harness.
     """
     try:
-        result = target(inputs=example.inputs, config=config)
+        result = target(prompt_template=prompt_template, config=config, **example.inputs)
         return SuccessfulTrial(example=example, result=result)
     except Exception as err:
         return FailedTrial(example=example, error=err)
@@ -145,16 +155,14 @@ def score_metric(trial: Trial, metric: Metric) -> Scoring:
         )
 
     try:
-        if metric.judge_config is None:
-            programmatic = cast(ProgrammaticScorer, metric.scorer)
-            score = programmatic(trial.result.output, trial.example)
-        else:
-            judge = cast(LLMJudgeScorer, metric.scorer)
-            score = judge(
+        if isinstance(metric, ProgrammaticMetric):
+            score = metric.scorer(trial.result.output, trial.example)
+        else:  # LLMJudgeMetric
+            score = metric.scorer(
                 trial.result.output,
                 trial.example,
                 metric,
-                metric.judge_config,
+                metric.config,
                 trial.rendered_prompt,
             )
         metric.scale.validate(score.raw)
@@ -176,7 +184,12 @@ def _validate_run(
     Catches configuration mistakes cheaply, before any LM call is made.
     Does not perform any network I/O.
     """
-    # --- dataset ---
+    _validate_dataset(dataset)
+    _validate_metrics(metrics)
+    _validate_experiment(experiment)
+
+
+def _validate_dataset(dataset: Dataset) -> None:
     if not dataset:
         raise ValueError("dataset is empty")
 
@@ -187,7 +200,8 @@ def _validate_run(
             "make this all-or-nothing so reference-dependent metrics are unambiguous"
         )
 
-    # --- metrics ---
+
+def _validate_metrics(metrics: list[Metric]) -> None:
     if not metrics:
         raise ValueError("no metrics provided")
 
@@ -196,15 +210,19 @@ def _validate_run(
         raise ValueError(f"metric names must be unique, got {names!r}")
 
     for m in metrics:
-        if m.judge_config is not None and m.judge_config.model == "":
-            raise ValueError(f"metric {m.name!r}: judge_config.model is empty")
+        if isinstance(m, LLMJudgeMetric):
+            if not m.config.model:
+                raise ValueError(f"metric {m.name!r}: config.model is empty")
+            if not m.prompt_template:
+                raise ValueError(f"metric {m.name!r}: prompt_template is empty")
 
-    # --- experiment config ---
+
+def _validate_experiment(experiment: Experiment) -> None:
+    if not experiment.prompt_template:
+        raise ValueError("experiment.prompt_template is empty")
     cfg = experiment.config
     if not cfg.model:
         raise ValueError("experiment.config.model is empty")
-    if not cfg.prompt_template:
-        raise ValueError("experiment.config.prompt_template is empty")
     if cfg.output_schema is not None and not (
         isinstance(cfg.output_schema, type) and issubclass(cfg.output_schema, BaseModel)
     ):

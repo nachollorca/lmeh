@@ -52,7 +52,7 @@ def _(mo):
     mo.md(r"""
     Now, we define the target function that performs the classification. Its outputs are the ones we will evaluate.
 
-    The function must adhere to the `TargetFunction` protocol: take **some inputs** and the **LM config**, then return a `TargetOutput`.
+    The function must adhere to the `TargetFunction` protocol: take its **named inputs**, the **prompt template**, and an **LM config**, then return a `TargetOutput`. The harness unpacks `Example.inputs` as keyword arguments, so the parameter names here must match the dict keys.
     """)
     return
 
@@ -61,10 +61,10 @@ def _(mo):
 def _():
     from lmdk import complete, render_template
 
-    from lmeh.datatypes import TargetConfig, TargetOutput
+    from lmeh.datatypes import LMConfig, TargetOutput
 
-    def detect_hate(inputs: dict[str, str], config: TargetConfig) -> TargetOutput:
-        prompt = render_template(template=config.prompt_template, COMMENT=inputs["comment"])
+    def detect_hate(comment: str, prompt_template: str, config: LMConfig) -> TargetOutput:
+        prompt = render_template(template=prompt_template, COMMENT=comment)
         response = complete(
             model=config.model,
             generation_kwargs=config.generation_kwargs,
@@ -74,32 +74,33 @@ def _():
         )
         return TargetOutput.passthrough(response=response)
 
-    return TargetConfig, detect_hate
+    return LMConfig, detect_hate
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    Now, lets define the config under test. These are the moving parts that we want to evaluate and optimize: the model, prompt template, output schema, generation kwargs, etc.
+    Now, lets define the moving parts under test. The three sweepable axes are the **prompt template**, the **LM config** (model, generation kwargs, optional output schema), and the target function itself.
     """)
     return
 
 
 @app.cell
-def _(TargetConfig):
+def _(LMConfig):
     from pydantic import BaseModel, Field
 
     class Output(BaseModel):
         is_hate: bool
         reason: str = Field(description="The brief reason why the comment is hate speech or not")
 
-    config = TargetConfig(
+    prompt_template = "Do you think the comment '{{ COMMENT }}' is hate speech?"
+
+    config = LMConfig(
         model="mistral:mistral-small-latest",
         generation_kwargs={"temperature": 0.7},
-        prompt_template="Do you think the comment '{{ COMMENT }}' is hate speech?",
         output_schema=Output,
     )
-    return (config,)
+    return config, prompt_template
 
 
 @app.cell(hide_code=True)
@@ -111,10 +112,15 @@ def _(mo):
 
 
 @app.cell
-def _(config, dataset, detect_hate):
+def _(config, dataset, detect_hate, prompt_template):
     from lmeh.execution import run_trial
 
-    trial = run_trial(target=detect_hate, example=dataset[0], config=config)
+    trial = run_trial(
+        target=detect_hate,
+        prompt_template=prompt_template,
+        config=config,
+        example=dataset[0],
+    )
 
     print(trial.result.output)
     return (trial,)
@@ -127,26 +133,31 @@ def _(mo):
 
     Let's define a silly metric that simply compares the output from the function for the given example against the reference (our truth value).
 
-    For this, we do not need to use a `LLMJudgeScorer`. A deterministic scorer is more than enough. It must follow the `ProgrammaticScorer` protocol. We define the possible values using the `Ordinal` scale.
+    For this, we do not need an LLM judge. A `ProgrammaticMetric` whose scorer follows the `ProgrammaticScorer` protocol is more than enough. We define the possible values using the `Ordinal` scale.
     """)
     return
 
 
 @app.cell
 def _(Example):
-    from lmeh.datatypes import Metric, Ordinal, Score
+    from lmeh.datatypes import Ordinal, ProgrammaticMetric, Score
 
     def is_correct(output: bool, example: Example) -> Score:
         raw_score = output.is_hate == example.reference
-        return Score(raw=raw_score)
+        if raw_score:
+            reason = "Output matches the reference"
+        else:
+            reason = "Output does not match the reference"
 
-    correctness = Metric(
+        return Score(raw=raw_score, reason=reason)
+
+    correctness = ProgrammaticMetric(
         name="correctness",
         description="whether the answer is correct or not",
         scale=Ordinal(levels=[False, True]),
         scorer=is_correct,
     )
-    return Metric, Ordinal, correctness
+    return Ordinal, correctness
 
 
 @app.cell(hide_code=True)
@@ -169,27 +180,25 @@ def _(correctness, trial):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    For the sake of playing, we could also make an LLM Judge that evaluates the same and gives a brief explanation. You can use the default one or create one that adheres to the `LLMJudgeScorer` protocol.
+    For the sake of playing, we could also make an LLM Judge that evaluates the same and gives a brief explanation. You can use the default one or create one that adheres to the `LLMJudgeScorer` protocol. Judge metrics use the `LLMJudgeMetric` variant — they carry their own `LMConfig` and judge prompt template.
     """)
     return
 
 
 @app.cell
-def _(Metric, Ordinal):
-    from lmeh.datatypes import JudgeConfig
+def _(LMConfig, Ordinal):
+    from lmeh.datatypes import LLMJudgeMetric
     from lmeh.judges import default_llm_judge
 
-    judge_config = JudgeConfig(
-        model="mistral:mistral-medium-latest",
-        generation_kwargs={"temperature": 0.1},
-    )
-
-    correctness_2 = Metric(
+    correctness_2 = LLMJudgeMetric(
         name="correctness2",
         description="whether the answer is correct or not",
         scale=Ordinal(levels=[False, True]),
         scorer=default_llm_judge,
-        judge_config=judge_config,
+        config=LMConfig(
+            model="mistral:mistral-medium-latest",
+            generation_kwargs={"temperature": 0.1},
+        ),
     )
     return (correctness_2,)
 
@@ -218,14 +227,22 @@ def _(mo):
 
 
 @app.cell
-def _(config, correctness, correctness_2, dataset, detect_hate):
+def _(
+    config,
+    correctness,
+    correctness_2,
+    dataset,
+    detect_hate,
+    prompt_template,
+):
     from lmeh.execution import run_experiment
     from lmeh.datatypes import Experiment
 
     experiment = Experiment(
         name="silly-test",
         target=detect_hate,
-        config=config
+        prompt_template=prompt_template,
+        config=config,
     )
 
     results = run_experiment(
