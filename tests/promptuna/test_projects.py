@@ -12,6 +12,7 @@ from promptuna.projects import (
     build_experiment,
     default_projects_root,
     get_projects_root,
+    list_program_names,
     resolve_examples,
     resolve_metrics,
     resolve_program,
@@ -188,3 +189,17 @@ def test_build_catalog_skips_invalid_project_dir_names(tmp_path):
 
     assert [project.name for project in catalog.projects] == ["valid_project"]
     assert catalog.projects[0].prompts == ["baseline"]
+
+
+def test_list_program_names_skips_public_non_programs(tmp_path):
+    """A public fan-out helper in ``programs.py`` must not be offered as a program."""
+    project_dir = tmp_path / "with_helper"
+    project_dir.mkdir()
+    (project_dir / "programs.py").write_text(
+        "def real(prompt_template: str, model: str, **inputs):\n    return inputs\n\n\n"
+        "def fanout(model: str, template: str):\n    return None\n",
+        encoding="utf-8",
+    )
+    set_projects_root(tmp_path)
+
+    assert list_program_names(project_dir) == ["real"]
