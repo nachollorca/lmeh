@@ -67,20 +67,22 @@
 	<section class="panel">
 		<h2>Results</h2>
 		<AggregateBar {store} {complete} />
-		{#each store.flatTrialIds as trialId, i (trialId)}
-			{@const entry = store.trialsById.get(trialId)}
-			{#if entry}
+		{#each store.flatGroupIds as groupId, i (groupId)}
+			{@const replicates = (store.groups.get(groupId) ?? [])
+				.map((key) => store.trialsById.get(key))
+				.filter((entry) => entry !== undefined)}
+			{#if replicates.length > 0}
 				<TrialRow
-					trial={entry.trial}
-					scorings={entry.scorings}
-					expanded={expandedTrials.has(trialId)}
-					onToggle={() => toggleTrial(trialId)}
+					{replicates}
+					expanded={expandedTrials.has(groupId)}
+					onToggle={() => toggleTrial(groupId)}
 					index={i + 1}
 					metrics={store.manifest?.metrics ?? []}
+					repeats={store.manifest?.repeats ?? 1}
 				/>
 			{/if}
 		{/each}
-		{#if store.flatTrialIds.length === 0 && store.status === 'running'}
+		{#if store.flatGroupIds.length === 0 && store.status === 'running'}
 			<p class="muted">Waiting for trials…</p>
 		{/if}
 	</section>

@@ -6,7 +6,8 @@ import type {
 	LiveAggregates,
 	ScoringPayload,
 	StepSection,
-	TrialPayload
+	TrialPayload,
+	TrialWithScorings
 } from '$lib/types';
 
 function emptyAggregates(): LiveAggregates {
@@ -30,7 +31,8 @@ export function createEventStoreState(manifest: JobManifest | null = null): Even
 		status: manifest?.status ?? 'running',
 		errorMessage: manifest?.error ?? null,
 		trialsById: new Map(),
-		flatTrialIds: [],
+		groups: new Map(),
+		flatGroupIds: [],
 		steps: [],
 		aggregates: emptyAggregates(),
 		summary: null,
@@ -46,7 +48,7 @@ function ensureStep(steps: StepSection[], stepIndex: number): StepSection {
 			stepIndex,
 			proposal: null,
 			step: null,
-			trialIds: [],
+			groupIds: [],
 			complete: false
 		};
 		steps.push(step);
@@ -55,17 +57,33 @@ function ensureStep(steps: StepSection[], stepIndex: number): StepSection {
 	return step;
 }
 
-/** Optimize reuses trial_id per example across steps; scope keys by step. */
-export function stepTrialKey(stepIndex: number, trialId: string): string {
+/** Trials are keyed per replicate; optimize reuses ids across steps, so scope by step. */
+export function trialKey(stepIndex: number, trialId: string): string {
 	return `${stepIndex}:${trialId}`;
 }
 
-function trialStoreKey(
-	kind: JobManifest['kind'] | undefined,
-	stepIndex: number,
-	trialId: string
-): string {
-	return kind === 'optimize' ? stepTrialKey(stepIndex, trialId) : trialId;
+/**
+ * Replicates of one dataset row share a group key and render as a single row.
+ * Jobs written before `example_id` existed fall back to `trial_id`, i.e. one
+ * group per replicate — exactly the old flat behaviour.
+ */
+export function groupKey(stepIndex: number, payload: TrialPayload | ScoringPayload): string {
+	return `${stepIndex}:${payload.example_id ?? payload.trial_id}`;
+}
+
+/** Register a replicate under its group, appending the group on first sight. */
+function addToGroup(state: EventStoreState, stepIndex: number, group: string, key: string): void {
+	const members = state.groups.get(group);
+	if (members) {
+		if (!members.includes(key)) state.groups.set(group, [...members, key]);
+		return;
+	}
+	state.groups.set(group, [key]);
+	if (state.manifest?.kind === 'optimize') {
+		ensureStep(state.steps, stepIndex).groupIds.push(group);
+	} else {
+		state.flatGroupIds.push(group);
+	}
 }
 
 function updateTrialAggregates(aggregates: LiveAggregates, trial: TrialPayload): void {
@@ -98,7 +116,7 @@ function updateScoringAggregates(aggregates: LiveAggregates, scoring: ScoringPay
 }
 
 function applyTrial(state: EventStoreState, trial: TrialPayload, stepIndex: number): void {
-	const key = trialStoreKey(state.manifest?.kind, stepIndex, trial.trial_id);
+	const key = trialKey(stepIndex, trial.trial_id);
 	const existing = state.trialsById.get(key);
 	if (existing) {
 		// Replace the entry with a new object so consumers (e.g. TrialRow) see a
@@ -107,20 +125,13 @@ function applyTrial(state: EventStoreState, trial: TrialPayload, stepIndex: numb
 		state.trialsById.set(key, { ...existing, trial });
 	} else {
 		state.trialsById.set(key, { trial, scorings: [] });
-		if (state.manifest?.kind === 'optimize') {
-			const step = ensureStep(state.steps, stepIndex);
-			if (!step.trialIds.includes(key)) {
-				step.trialIds.push(key);
-			}
-		} else {
-			state.flatTrialIds.push(key);
-		}
+		addToGroup(state, stepIndex, groupKey(stepIndex, trial), key);
 	}
 	updateTrialAggregates(state.aggregates, trial);
 }
 
 function applyScoring(state: EventStoreState, scoring: ScoringPayload, stepIndex: number): void {
-	const key = trialStoreKey(state.manifest?.kind, stepIndex, scoring.trial_id);
+	const key = trialKey(stepIndex, scoring.trial_id);
 	const existing = state.trialsById.get(key);
 	if (existing) {
 		const idx = existing.scorings.findIndex(
@@ -137,20 +148,14 @@ function applyScoring(state: EventStoreState, scoring: ScoringPayload, stepIndex
 			trial: {
 				status: 'failed',
 				trial_id: scoring.trial_id,
+				example_id: scoring.example_id,
 				example: { inputs: {}, reference: null },
 				replicate: scoring.replicate,
 				error: { type: 'MissingTrial', message: 'Scoring arrived before trial' }
 			},
 			scorings: [scoring]
 		});
-		if (state.manifest?.kind === 'optimize') {
-			const step = ensureStep(state.steps, stepIndex);
-			if (!step.trialIds.includes(key)) {
-				step.trialIds.push(key);
-			}
-		} else {
-			state.flatTrialIds.push(key);
-		}
+		addToGroup(state, stepIndex, groupKey(stepIndex, scoring), key);
 	}
 	updateScoringAggregates(state.aggregates, scoring);
 }
@@ -163,10 +168,11 @@ export function reduceEvent(state: EventStoreState, envelope: EventEnvelope): Ev
 	const next: EventStoreState = {
 		...state,
 		trialsById: new Map(state.trialsById),
-		flatTrialIds: [...state.flatTrialIds],
+		groups: new Map(state.groups),
+		flatGroupIds: [...state.flatGroupIds],
 		steps: state.steps.map((s) => ({
 			...s,
-			trialIds: [...s.trialIds]
+			groupIds: [...s.groupIds]
 		})),
 		aggregates: { ...state.aggregates, perMetricScores: { ...state.aggregates.perMetricScores } },
 		lastSeq: envelope.seq
@@ -259,19 +265,24 @@ export function meanNormalizedScore(scorings: ScoringPayload[]): number | null {
 }
 
 /**
- * A row only leaves the pulsing state once every expected metric has reported;
- * colouring on the first arriving scoring paints a misleading (often red) mean
- * while the other metrics are still running.
+ * A row only leaves the pulsing state once every replicate has arrived and every
+ * expected metric has reported; colouring on the first arriving scoring paints a
+ * misleading (often red) mean while the other metrics are still running.
  */
 export function trialRowColor(
-	trial: TrialPayload,
-	scorings: ScoringPayload[],
-	metrics: string[] = []
+	replicates: TrialWithScorings[],
+	metrics: string[] = [],
+	expectedReplicates = replicates.length
 ): 'grey' | 'running' | 'score' {
-	if (trial.status === 'failed') return 'grey';
-	const expected = metrics.length; // empty for `run` jobs: nothing to wait for
-	if (new Set(scorings.map((s) => s.metric.name)).size < expected) return 'running';
-	return meanNormalizedScore(scorings) === null ? 'grey' : 'score';
+	if (replicates.every(({ trial }) => trial.status === 'failed')) return 'grey';
+	if (replicates.length < expectedReplicates) return 'running';
+	const pending = replicates.some(
+		({ trial, scorings }) =>
+			trial.status === 'success' &&
+			new Set(scorings.map((s) => s.metric.name)).size < metrics.length // empty for `run`
+	);
+	if (pending) return 'running';
+	return meanNormalizedScore(replicates.flatMap((r) => r.scorings)) === null ? 'grey' : 'score';
 }
 
 export function scoreGradient(normalized: number): string {
