@@ -95,6 +95,8 @@ Both LM calls in the loop are stochastic, so each is replicated independently:
 
 All `RunResults` aggregates collapse replicates, so raising either knob shrinks the error on the headline score instead of changing its meaning. `RunResults.replicate_noise()` reports the resulting per-metric **noise floor** (mean per-cell `sd`): improvements smaller than that number are indistinguishable from stochasticity, and the fix is more repeats or a better judge.
 
+`RunResults.replicate_divergence()` is the pre-metric counterpart: mean pairwise text dissimilarity (`1 - difflib` ratio) between the completions of one example's replicates, averaged over examples. It needs no metrics, so it is the only stochasticity signal a plain `run` job has. It measures *text* instability, not quality instability — harmless rewording counts as divergence — so it is reported as telemetry, never as a score. Both numbers also land in `summary.json` (`replicate_noise`, `telemetry.replicate_divergence`) for persisted server and CLI jobs.
+
 `repeats` is set per experiment, not per example: on the CLI (`--repeats`) and over HTTP (`repeats` in the request body) it applies to the whole dataset. Judge `repeats` lives on the metric object itself — in library code, or in the project's `metrics.py`.
 
 ### Inspiration
