@@ -18,6 +18,8 @@ from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -374,6 +376,27 @@ class RunResults:
     # Telemetry
     # ------------------------------------------------------------------
 
+    def replicate_divergence(self) -> Aggregate | None:
+        """How much does the raw LM output wander between program replicates?
+
+        Per example, :func:`content_divergence` over the completion contents of
+        its replicates, aggregated across examples. ``0.0`` means every
+        replicate returned byte-identical text. Unlike :meth:`replicate_noise`
+        this needs no metrics, so it is the only stochasticity signal a plain
+        ``run`` job has. It measures *text* instability, not quality
+        instability — harmless rewording counts as divergence — so read it as
+        telemetry beside the noise floor, never as a score.
+
+        Returns ``None`` when no example has two or more successful replicates:
+        divergence is undefined, not zero, from a single sample.
+        """
+        by_example: dict[int, list[str]] = {}
+        for trial in self.successful_trials:
+            if trial.response is not None:
+                by_example.setdefault(id(trial.example), []).append(trial.response.content)
+        per_example = [d for c in by_example.values() if (d := content_divergence(c)) is not None]
+        return _aggregate(per_example) if per_example else None
+
     @property
     def latency(self) -> float:
         """How much compute time did program calls consume in total, in seconds?
@@ -393,6 +416,18 @@ class RunResults:
         """What's the average program throughput in output tokens per second?"""
         lat = self.latency
         return self.output_tokens / lat if lat > 0 else 0.0
+
+
+def content_divergence(contents: list[str]) -> float | None:
+    """Mean pairwise dissimilarity (``1 - difflib`` ratio) over replicate outputs.
+
+    ``0.0`` for identical strings, approaching ``1.0`` for unrelated ones.
+    ``None`` when fewer than two contents are given.
+    """
+    if len(contents) < 2:
+        return None
+    ratios = [SequenceMatcher(None, a, b).ratio() for a, b in combinations(contents, 2)]
+    return 1.0 - sum(ratios) / len(ratios)
 
 
 def _aggregate(values) -> Aggregate:

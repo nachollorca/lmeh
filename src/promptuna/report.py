@@ -162,17 +162,19 @@ def _render_weak_examples(
 
 def _render_telemetry(results: RunResults) -> str:
     """Render the telemetry section for a single run."""
-    return "\n".join(
-        [
-            "### Telemetry",
-            "",
-            "Totals across successful trials only.",
-            "",
-            f"- **Total latency**: {results.latency:.3f} s",
-            f"- **Total output tokens**: {results.output_tokens}",
-            f"- **Throughput**: {results.speed:.1f} tok/s",
-        ]
-    )
+    lines = [
+        "### Telemetry",
+        "",
+        "Totals across successful trials only.",
+        "",
+        f"- **Total latency**: {results.latency:.3f} s",
+        f"- **Total output tokens**: {results.output_tokens}",
+        f"- **Throughput**: {results.speed:.1f} tok/s",
+    ]
+    divergence = results.replicate_divergence()
+    if divergence is not None:
+        lines.append(f"- **Replicate divergence**: {_fmt(divergence)}")
+    return "\n".join(lines)
 
 
 def render_run(
