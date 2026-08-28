@@ -79,16 +79,18 @@
 	{/if}
 
 	<div class="trials">
-		{#each step.trialIds as trialKey, i (trialKey)}
-			{@const entry = store.trialsById.get(trialKey)}
-			{#if entry}
+		{#each step.groupIds as groupId, i (groupId)}
+			{@const replicates = (store.groups.get(groupId) ?? [])
+				.map((key) => store.trialsById.get(key))
+				.filter((entry) => entry !== undefined)}
+			{#if replicates.length > 0}
 				<TrialRow
-					trial={entry.trial}
-					scorings={entry.scorings}
-					expanded={expandedTrials.has(trialKey)}
-					onToggle={() => onToggleTrial(trialKey)}
+					{replicates}
+					expanded={expandedTrials.has(groupId)}
+					onToggle={() => onToggleTrial(groupId)}
 					index={i + 1}
 					metrics={store.manifest?.metrics ?? []}
+					repeats={store.manifest?.repeats ?? 1}
 				/>
 			{/if}
 		{/each}

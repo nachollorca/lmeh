@@ -78,15 +78,19 @@ def serialize_error(
     }
 
 
-def _trial_id(trial: Trial) -> str:
-    """Stable identifier for a trial within one optimization run."""
-    example = trial.example
+def _example_id(example: Example) -> str:
+    """Stable identifier for a dataset row, shared by all of its replicates."""
     key = json.dumps(
-        {"inputs": example.inputs, "reference": example.reference, "replicate": trial.replicate},
+        {"inputs": example.inputs, "reference": example.reference},
         sort_keys=True,
         default=str,
     )
     return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _trial_id(trial: Trial) -> str:
+    """Stable identifier for one ``(example, replicate)`` within one run."""
+    return f"{_example_id(trial.example)}:{trial.replicate}"
 
 
 def _exception_error(error: Exception) -> dict[str, str]:
@@ -165,6 +169,7 @@ def _serialize_trial(trial: Trial) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "status": "success" if isinstance(trial, SuccessfulTrial) else "failed",
         "trial_id": _trial_id(trial),
+        "example_id": _example_id(trial.example),
         "example": _serialize_example(trial.example),
         "replicate": trial.replicate,
     }
@@ -195,6 +200,7 @@ def _serialize_metric(metric: Metric) -> dict[str, str]:
 def _serialize_scoring(scoring: Scoring) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "trial_id": _trial_id(scoring.trial),
+        "example_id": _example_id(scoring.trial.example),
         "metric": _serialize_metric(scoring.metric),
         "replicate": scoring.replicate,
     }

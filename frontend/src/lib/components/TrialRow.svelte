@@ -1,22 +1,29 @@
 <script lang="ts">
-	import type { TrialPayload, ScoringPayload } from '$lib/types';
+	import type { TrialWithScorings } from '$lib/types';
 	import { trialRowColor, scoreGradient, meanNormalizedScore } from '$lib/eventStore';
 	import CollapsibleSection from './CollapsibleSection.svelte';
 	import JsonView from './JsonView.svelte';
 
 	interface Props {
-		trial: TrialPayload;
-		scorings: ScoringPayload[];
+		/** Every replicate of one dataset row; length 1 for a single-repeat job. */
+		replicates: TrialWithScorings[];
 		expanded: boolean;
 		onToggle: () => void;
 		index: number;
 		/** Metrics the job scores; a row pulses until all of them have reported. */
 		metrics?: string[];
+		/** Replicates the job was launched with; a row pulses until they all land. */
+		repeats?: number;
 	}
 
-	let { trial, scorings, expanded, onToggle, index, metrics = [] }: Props = $props();
+	let { replicates, expanded, onToggle, index, metrics = [], repeats }: Props = $props();
 
-	const colorMode = $derived(trialRowColor(trial, scorings, metrics));
+	// The dataset row is identical across replicates; the first one represents it.
+	const trial = $derived(replicates[0].trial);
+	// Pooling every replicate's scorings mirrors the backend's (example, metric)
+	// cell: one mean over both the program and the judge replicate axes.
+	const scorings = $derived(replicates.flatMap((r) => r.scorings));
+	const colorMode = $derived(trialRowColor(replicates, metrics, repeats ?? replicates.length));
 	// Withhold the mean until scoring is complete, else a partially-scored row
 	// shows a chip (and colour) computed from the metrics that happened to finish first.
 	const meanScore = $derived(colorMode === 'running' ? null : meanNormalizedScore(scorings));
@@ -78,6 +85,11 @@
 	<button type="button" class="trial-header" onclick={onToggle} aria-expanded={expanded}>
 		<span class="chevron">{expanded ? '▼' : '▶'}</span>
 		<span class="trial-id">{displayId}</span>
+		{#if replicates.length > 1}
+			<span class="replicate-badge" title="Program replicates pooled in this row"
+				>×{replicates.length}</span
+			>
+		{/if}
 		{#if meanScore !== null}
 			<span class="chip {scoreTier(meanScore)}" title="Mean of metric normalized scores">
 				<span class="chip-metric">MEAN</span>
@@ -115,56 +127,61 @@
 				{/if}
 			</CollapsibleSection>
 
-			{#if trial.status === 'success'}
-				<CollapsibleSection label="Output" hint={hintFor(trial.output)}>
-					{#if isJson(trial.output)}
-						<div class="json-box"><JsonView value={trial.output} /></div>
-					{:else}
-						<pre class="mono">{trial.output ?? '—'}</pre>
-					{/if}
-				</CollapsibleSection>
+			{#each replicates as { trial: rep, scorings: repScorings } (rep.trial_id)}
+				{#if replicates.length > 1}
+					<h3 class="replicate-heading">Replicate {rep.replicate}</h3>
+				{/if}
+				{#if rep.status === 'success'}
+					<CollapsibleSection label="Output" hint={hintFor(rep.output)}>
+						{#if isJson(rep.output)}
+							<div class="json-box"><JsonView value={rep.output} /></div>
+						{:else}
+							<pre class="mono">{rep.output ?? '—'}</pre>
+						{/if}
+					</CollapsibleSection>
 
-				{#if trial.telemetry}
-					<section class="telemetry-section">
-						<h4>Telemetry</h4>
-						{#if trial.telemetry.rendered_prompt}
-							<CollapsibleSection
-								label="Rendered prompt"
-								hint={`${trial.telemetry.rendered_prompt.length} chars`}
-							>
-								<pre class="mono">{trial.telemetry.rendered_prompt}</pre>
-							</CollapsibleSection>
-						{/if}
-						{#if trial.telemetry.response}
-							<ul class="telemetry-stats">
-								<li>Tokens in: {trial.telemetry.response.input_tokens ?? '—'}</li>
-								<li>Tokens out: {trial.telemetry.response.output_tokens ?? '—'}</li>
-								<li>Latency: {trial.telemetry.response.latency?.toFixed(3) ?? '—'}s</li>
-							</ul>
-						{/if}
+					{#if rep.telemetry}
+						<section class="telemetry-section">
+							<h4>Telemetry</h4>
+							{#if rep.telemetry.rendered_prompt}
+								<CollapsibleSection
+									label="Rendered prompt"
+									hint={`${rep.telemetry.rendered_prompt.length} chars`}
+								>
+									<pre class="mono">{rep.telemetry.rendered_prompt}</pre>
+								</CollapsibleSection>
+							{/if}
+							{#if rep.telemetry.response}
+								<ul class="telemetry-stats">
+									<li>Tokens in: {rep.telemetry.response.input_tokens ?? '—'}</li>
+									<li>Tokens out: {rep.telemetry.response.output_tokens ?? '—'}</li>
+									<li>Latency: {rep.telemetry.response.latency?.toFixed(3) ?? '—'}s</li>
+								</ul>
+							{/if}
+						</section>
+					{/if}
+				{:else if rep.error}
+					<section>
+						<h4>Error</h4>
+						<p class="error-text">{rep.error.type}: {rep.error.message}</p>
 					</section>
 				{/if}
-			{:else if trial.error}
-				<section>
-					<h4>Error</h4>
-					<p class="error-text">{trial.error.type}: {trial.error.message}</p>
-				</section>
-			{/if}
-			{#each scorings as scoring (scoring.metric.name + scoring.replicate)}
-				<section class="scoring-section">
-					<h4>Scoring — {scoring.metric.name}</h4>
-					{#if scoring.status === 'success' && scoring.score}
-						<p class="scoring-stat">
-							<span class="scoring-key">NORMALIZED</span>
-							<strong>{scoring.score.normalized.toFixed(3)}</strong>
-						</p>
-						<CollapsibleSection label="Reason">
-							<pre class="mono">{scoring.score.reason}</pre>
-						</CollapsibleSection>
-					{:else if scoring.error}
-						<p class="error-text">{scoring.error.type}: {scoring.error.message}</p>
-					{/if}
-				</section>
+				{#each repScorings as scoring (scoring.metric.name + scoring.replicate)}
+					<section class="scoring-section">
+						<h4>Scoring — {scoring.metric.name}</h4>
+						{#if scoring.status === 'success' && scoring.score}
+							<p class="scoring-stat">
+								<span class="scoring-key">NORMALIZED</span>
+								<strong>{scoring.score.normalized.toFixed(3)}</strong>
+							</p>
+							<CollapsibleSection label="Reason">
+								<pre class="mono">{scoring.score.reason}</pre>
+							</CollapsibleSection>
+						{:else if scoring.error}
+							<p class="error-text">{scoring.error.type}: {scoring.error.message}</p>
+						{/if}
+					</section>
+				{/each}
 			{/each}
 		</div>
 	{/if}
@@ -251,6 +268,33 @@
 		font-size: 11px;
 		line-height: 16px;
 		letter-spacing: 0.03em;
+	}
+
+	.replicate-badge {
+		flex-shrink: 0;
+		padding: 1px var(--space-sm);
+		border: 1px solid var(--border);
+		background: var(--surface-dim);
+		color: var(--muted);
+		font-family: var(--font-mono);
+		font-size: 11px;
+		line-height: 16px;
+	}
+
+	/* Replicate bands own the boundary between replicates: they must read as a
+	   level above the Telemetry/Scoring headings nested under them. */
+	.replicate-heading {
+		margin: var(--space-md) calc(-1 * var(--space-md)) var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		border-top: 2px solid var(--slate-900);
+		background: var(--surface-dim);
+		font-family: var(--font-mono);
+		font-size: 13px;
+		line-height: 20px;
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--accent-purple);
 	}
 
 	.chip-metric {

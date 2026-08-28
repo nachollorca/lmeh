@@ -52,6 +52,7 @@ Authoritative definitions: [`main.py`](src/promptuna_server/main.py), [`schemas.
 
 - **One job at a time** in memory. A second `POST` while one is running returns **409** with `{"detail":"another job is already running"}`.
 - **`model`** and **`proposer_model`** are free-text strings (`provider:model-id`); they are **not** in `/api/catalog`.
+- **`repeats`** (default `1`) runs every example that many times to average out LM stochasticity; it applies to the whole dataset. Judge-side replication is not settable over HTTP — it lives on the metric in the project's `metrics.py`.
 - **`summary`** in `GET /api/jobs/{job_id}` is `null` while `manifest.status === "running"`.
 
 ### Job persistence

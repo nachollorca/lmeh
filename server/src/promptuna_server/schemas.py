@@ -39,6 +39,7 @@ class RunRequest(BaseModel):
     model: str
     examples: str
     workers: int = Field(default=1, ge=1)
+    repeats: int = Field(default=1, ge=1)
 
 
 class EvaluateRequest(RunRequest):
@@ -68,6 +69,7 @@ class JobListItemResponse(BaseModel):
     examples: str
     model: str
     workers: int
+    repeats: int = 1
     metrics: list[str] | None = None
     steps: int | None = None
     proposer_model: str | None = None

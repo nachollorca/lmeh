@@ -117,6 +117,39 @@ def test_fold_summary_counts_failures(example, exact_match_metric):
     assert summary["overall"] is None
 
 
+def test_fold_summary_pools_replicates_per_cell(example, exact_match_metric):
+    """Replicates of one example form one cell: mean scores, sd becomes noise floor."""
+    events = []
+    for seq, (replicate, score) in enumerate([(0, 1.0), (1, 0.0)]):
+        trial = make_trial(example, output="4" if replicate == 0 else "5", replicate=replicate)
+        scoring = SuccessfulScoring(
+            trial=trial,
+            metric=exact_match_metric,
+            score=Score(raw=score, normalized=score, reason="r"),
+        )
+        events.append(serialize_event(trial, job_id="job-1", seq=seq * 2, step_index=0))
+        events.append(serialize_event(scoring, job_id="job-1", seq=seq * 2 + 1, step_index=0))
+
+    summary = fold_summary(events, {"job_id": "job-1", "kind": "evaluate"})
+
+    # One cell -> per_metric averages the replicates instead of counting them twice.
+    assert summary["per_metric"]["exact_match"]["mean"] == pytest.approx(0.5)
+    assert summary["per_metric"]["exact_match"]["n"] == 1
+    # The disagreement shows up as the metric's noise floor, not as heterogeneity.
+    assert summary["replicate_noise"]["exact_match"]["mean"] == pytest.approx(0.7071, abs=1e-4)
+    # "4" vs "5" share nothing, so the replicates diverge completely.
+    assert summary["telemetry"]["replicate_divergence"]["mean"] == pytest.approx(1.0)
+
+
+def test_fold_summary_omits_divergence_without_replicates(example, exact_match_metric):
+    trial = make_trial(example, output="4")
+    events = [serialize_event(trial, job_id="job-1", seq=0, step_index=0)]
+
+    summary = fold_summary(events, {"job_id": "job-1", "kind": "evaluate"})
+
+    assert summary["telemetry"]["replicate_divergence"] is None
+
+
 def test_fold_summary_includes_optimize_steps(experiment, examples, exact_match_metric):
     result = make_run_results(experiment, examples[:1], exact_match_metric, scores=[0.6])
     step = Step(

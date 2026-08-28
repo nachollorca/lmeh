@@ -52,6 +52,34 @@ def test_run_writes_job_and_renders_human_output(fake_complete):
     assert record.summary["trial_count"] == 2
 
 
+def test_run_repeats_multiplies_trials(fake_complete):
+    result = RUNNER.invoke(
+        app,
+        [
+            "run",
+            "--project",
+            "test_project",
+            "--program",
+            "echo",
+            "--prompt",
+            "baseline",
+            "--examples",
+            "dev",
+            "--model",
+            "test:model",
+            "--repeats",
+            "3",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    job_id = result.stderr.strip().split()[-1]
+    record = load_job(get_jobs_root(), job_id)
+    assert record.manifest["repeats"] == 3
+    assert record.summary is not None
+    assert record.summary["trial_count"] == 6
+
+
 def test_evaluate_accepts_comma_separated_metrics(fake_complete):
     result = RUNNER.invoke(
         app,

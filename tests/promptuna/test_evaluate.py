@@ -25,6 +25,7 @@ from promptuna.evaluate import (
     RunResults,
     SuccessfulScoring,
     _aggregate,
+    content_divergence,
     default_llm_judge,
     evaluate,
     score_metric,
@@ -301,3 +302,36 @@ def test_default_llm_judge_uses_structured_output(model, example):
 
     assert raw.raw == 1.0
     assert raw.reason == "looks good"
+
+
+def test_content_divergence_scores_identical_and_differing_replicates():
+    assert content_divergence(["same", "same", "same"]) == 0.0
+    assert content_divergence(["one"]) is None  # undefined from a single sample
+    assert content_divergence([]) is None
+    assert content_divergence(["abcdef", "abcxyz"]) == pytest.approx(0.5)
+
+
+def test_replicate_divergence_aggregates_across_examples(experiment, examples, exact_match_metric):
+    stable, wobbly = examples
+    results = RunResults(
+        experiment=experiment,
+        run=RunInfo(),
+        trials=[
+            make_trial(stable, output="4"),
+            make_trial(stable, output="4", replicate=1),
+            make_trial(wobbly, output="abcdef"),
+            make_trial(wobbly, output="abcxyz", replicate=1),
+        ],
+        scorings=[],
+    )
+
+    divergence = results.replicate_divergence()
+
+    assert divergence is not None
+    assert divergence.n == 2  # one value per example, not per trial
+    assert divergence.mean == pytest.approx(0.25)  # mean of 0.0 and 0.5
+
+
+def test_replicate_divergence_is_none_without_replicates(experiment, examples, exact_match_metric):
+    results = make_run_results(experiment, examples, exact_match_metric, scores=[1.0, 1.0])
+    assert results.replicate_divergence() is None

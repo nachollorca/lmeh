@@ -16,6 +16,8 @@ export interface Thinking {
 export interface TrialPayload {
 	status: TrialStatus;
 	trial_id: string;
+	/** Shared by every replicate of the same dataset row (absent on pre-1.36 jobs). */
+	example_id?: string;
 	example: { inputs: Record<string, unknown>; reference: unknown };
 	replicate: number;
 	output?: unknown;
@@ -34,6 +36,7 @@ export interface TrialPayload {
 
 export interface ScoringPayload {
 	trial_id: string;
+	example_id?: string;
 	metric: { name: string; description: string; kind: 'programmatic' | 'llm_judge' };
 	replicate: number;
 	status: TrialStatus;
@@ -92,6 +95,7 @@ export interface RunRequest {
 	model: string;
 	examples: string;
 	workers: number;
+	repeats: number;
 }
 
 export interface EvaluateRequest extends RunRequest {
@@ -115,6 +119,7 @@ export interface JobManifest {
 	examples: string;
 	model: string;
 	workers: number;
+	repeats?: number;
 	metrics?: string[];
 	steps?: number;
 	proposer_model?: string;
@@ -134,6 +139,7 @@ export interface JobListItem {
 	examples: string;
 	model: string;
 	workers: number;
+	repeats: number;
 	metrics: string[] | null;
 	steps: number | null;
 	proposer_model: string | null;
@@ -161,10 +167,12 @@ export interface JobSummary {
 	scoring_failure_rate: number;
 	overall: AggregateStats | null;
 	per_metric: Record<string, AggregateStats>;
+	replicate_noise?: Record<string, AggregateStats>;
 	telemetry: {
 		input_tokens: number;
 		output_tokens: number;
 		latency: number;
+		replicate_divergence?: AggregateStats | null;
 	};
 	steps?: Array<{
 		step_index: number;
@@ -189,8 +197,8 @@ export interface StepSection {
 	stepIndex: number;
 	proposal: ProposalPayload | null;
 	step: StepPayload | null;
-	/** Store keys: `trial_id` for run/evaluate, `${stepIndex}:${trial_id}` for optimize */
-	trialIds: string[];
+	/** Group keys (`${stepIndex}:${example_id}`) in arrival order. */
+	groupIds: string[];
 	complete: boolean;
 }
 
@@ -212,7 +220,9 @@ export interface EventStoreState {
 	status: JobStatus;
 	errorMessage: string | null;
 	trialsById: Map<string, TrialWithScorings>;
-	flatTrialIds: string[];
+	/** Group key -> its replicate keys into `trialsById`, in arrival order. */
+	groups: Map<string, string[]>;
+	flatGroupIds: string[];
 	steps: StepSection[];
 	aggregates: LiveAggregates;
 	summary: JobSummary | null;

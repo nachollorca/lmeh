@@ -71,6 +71,7 @@ def _job_config(
         dataset_path=dataset_path,
         model=request.model,
         workers=request.workers,
+        repeats=request.repeats,
         metrics=tuple(metrics) if metrics is not None else None,
         steps=steps,
         proposer_model=proposer_model,
@@ -115,6 +116,7 @@ def _manifest_to_list_item(manifest: dict) -> JobListItemResponse:
         examples=manifest["examples"],
         model=manifest["model"],
         workers=manifest["workers"],
+        repeats=manifest.get("repeats", 1),
         metrics=manifest.get("metrics"),
         steps=manifest.get("steps"),
         proposer_model=manifest.get("proposer_model"),
@@ -154,6 +156,7 @@ def start_run(request: RunRequest) -> JobStartResponse:
             prompt=request.prompt,
             model=request.model,
             examples=request.examples,
+            repeats=request.repeats,
         )
         config = _job_config(request, kind="run")
     except ProjectValidationError as exc:
@@ -183,6 +186,7 @@ def start_evaluate(request: EvaluateRequest) -> JobStartResponse:
             model=request.model,
             examples=request.examples,
             metrics=request.metrics,
+            repeats=request.repeats,
         )
         config = _job_config(request, kind="evaluate", metrics=request.metrics)
     except ProjectValidationError as exc:
@@ -214,6 +218,7 @@ def start_optimize(request: OptimizeRequest) -> JobStartResponse:
             model=request.model,
             examples=request.examples,
             metrics=request.metrics,
+            repeats=request.repeats,
         )
         config = _job_config(
             request,

@@ -124,10 +124,17 @@ def _resolve_named_callable(module: Any, name: str, *, kind: str) -> Callable[..
     return obj
 
 
+def _is_program(obj: Any) -> bool:
+    """Whether ``obj`` has the :class:`~promptuna.program.Program` call signature."""
+    try:
+        params = inspect.signature(obj).parameters
+    except (TypeError, ValueError):
+        return False
+    return "prompt_template" in params and "model" in params
+
+
 def _validate_program(program: Callable[..., Any], name: str) -> Program:
-    sig = inspect.signature(program)
-    params = sig.parameters
-    if "prompt_template" not in params or "model" not in params:
+    if not _is_program(program):
         raise ProjectValidationError(
             f"program {name!r} must accept prompt_template and model parameters"
         )
@@ -202,14 +209,20 @@ def list_project_names() -> list[str]:
 
 
 def list_program_names(project_dir: Path) -> list[str]:
-    """Return public program function names from ``programs.py``."""
+    """Return public program function names from ``programs.py``.
+
+    Only functions with the :class:`~promptuna.program.Program` signature are
+    listed: a ``programs.py`` may also define public helpers that fan the
+    program out, and discovery must never offer a name
+    :func:`resolve_program` would reject.
+    """
     if not (project_dir / "programs.py").is_file():
         return []
     module = _load_project_module(project_dir, "programs")
     return sorted(
         name
         for name, obj in inspect.getmembers(module, inspect.isfunction)
-        if not name.startswith("_") and inspect.getmodule(obj) is module
+        if not name.startswith("_") and inspect.getmodule(obj) is module and _is_program(obj)
     )
 
 
@@ -265,6 +278,7 @@ def build_experiment(
     model: str,
     examples: str,
     metrics: list[str] | None = None,
+    repeats: int = 1,
 ) -> tuple[Experiment, list[Example], list[Metric] | None]:
     """Validate project selections and build an :class:`Experiment` plus dataset."""
     project_dir = resolve_project_dir(project)
@@ -277,5 +291,6 @@ def build_experiment(
         program=resolved_program,
         prompt_template=prompt_template,
         model=model,
+        repeats=repeats,
     )
     return experiment, example_rows, resolved_metrics

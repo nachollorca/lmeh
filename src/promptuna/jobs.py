@@ -25,7 +25,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
 
-from promptuna.evaluate import Scoring
+from promptuna.evaluate import Scoring, content_divergence
 from promptuna.optimize import Proposal, Step
 from promptuna.projects import get_projects_root
 from promptuna.run import Trial
@@ -141,6 +141,7 @@ class JobConfig:
     dataset_path: Path
     model: str
     workers: int
+    repeats: int = 1
     metrics: tuple[str, ...] | None = None
     steps: int | None = None
     proposer_model: str | None = None
@@ -165,6 +166,7 @@ def build_manifest(*, job_id: str, config: JobConfig) -> dict[str, Any]:
         "dataset_sha256": sha256_file(config.dataset_path),
         "model": config.model,
         "workers": config.workers,
+        "repeats": config.repeats,
         "error": None,
     }
     if config.metrics is not None:
@@ -303,6 +305,73 @@ def list_job_manifests(jobs_root: Path) -> list[dict[str, Any]]:
     return [load_manifest(jobs_root / job_id) for job_id in list_job_ids(jobs_root)]
 
 
+def _cell_key(event: dict[str, Any]) -> tuple[int, str]:
+    """Group key pooling an example's replicates within one step.
+
+    ``step_index`` keeps optimize steps from bleeding into one another (it is
+    always 0 for run and evaluate). Events written before ``example_id`` existed
+    fall back to ``trial_id``, which is per-replicate: groups degenerate to a
+    single member, exactly the previous behaviour.
+    """
+    payload = event["payload"]
+    return (event["step_index"], payload.get("example_id", payload["trial_id"]))
+
+
+def _quality_rollup(successful_scorings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Roll scorings up per ``(example, metric)`` cell.
+
+    A cell pools replicates only, so its ``sd`` is pure measurement noise:
+    ``per_metric`` averages the cell means (one weight per example) and the
+    leftover ``sd`` becomes the metric's noise floor.
+    """
+    cells: dict[tuple[int, str, str], list[float]] = {}
+    for event in successful_scorings:
+        step, example = _cell_key(event)
+        key = (step, example, event["payload"]["metric"]["name"])
+        cells.setdefault(key, []).append(event["payload"]["score"]["normalized"])
+
+    cell_means: dict[str, list[float]] = {}
+    cell_sds: dict[str, list[float]] = {}
+    for (_step, _example, metric_name), values in cells.items():
+        aggregate = _aggregate(values)
+        cell_means.setdefault(metric_name, []).append(float(aggregate["mean"]))
+        cell_sds.setdefault(metric_name, []).append(float(aggregate["sd"]))
+
+    per_metric = {name: _aggregate(means) for name, means in cell_means.items()}
+    return {
+        "per_metric": per_metric,
+        "replicate_noise": {name: _aggregate(sds) for name, sds in cell_sds.items()},
+        "overall": _aggregate([float(a["mean"]) for a in per_metric.values()])
+        if per_metric
+        else None,
+    }
+
+
+def _telemetry_rollup(successful_trials: list[dict[str, Any]]) -> dict[str, Any]:
+    """Sum response telemetry and measure how far an example's replicates drifted."""
+    contents: dict[tuple[int, str], list[str]] = {}
+    input_tokens = 0
+    output_tokens = 0
+    latency = 0.0
+    for event in successful_trials:
+        response = event["payload"].get("telemetry", {}).get("response")
+        if response is None:
+            continue
+        if response.get("content") is not None:
+            contents.setdefault(_cell_key(event), []).append(response["content"])
+        input_tokens += int(response.get("input_tokens") or 0)
+        output_tokens += int(response.get("output_tokens") or 0)
+        latency += float(response.get("latency") or 0.0)
+
+    divergences = [d for c in contents.values() if (d := content_divergence(c)) is not None]
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "latency": latency,
+        "replicate_divergence": _aggregate(divergences) if divergences else None,
+    }
+
+
 def fold_summary(events: list[dict[str, Any]], manifest: dict[str, Any]) -> dict[str, Any]:
     """Fold event envelopes into a denormalized summary dict.
 
@@ -322,26 +391,7 @@ def fold_summary(events: list[dict[str, Any]], manifest: dict[str, Any]) -> dict
     scoring_failure_rate = (
         0.0 if scoring_count == 0 else (scoring_count - len(successful_scorings)) / scoring_count
     )
-
-    per_metric_scores: dict[str, list[float]] = {}
-    for event in successful_scorings:
-        metric_name = event["payload"]["metric"]["name"]
-        score = event["payload"]["score"]["normalized"]
-        per_metric_scores.setdefault(metric_name, []).append(score)
-
-    per_metric = {name: _aggregate(scores) for name, scores in per_metric_scores.items()}
-    overall = _aggregate([agg["mean"] for agg in per_metric.values()]) if per_metric else None
-
-    input_tokens = 0
-    output_tokens = 0
-    latency = 0.0
-    for event in successful_trials:
-        response = event["payload"].get("telemetry", {}).get("response")
-        if response is None:
-            continue
-        input_tokens += int(response.get("input_tokens") or 0)
-        output_tokens += int(response.get("output_tokens") or 0)
-        latency += float(response.get("latency") or 0.0)
+    quality = _quality_rollup(successful_scorings)
 
     summary: dict[str, Any] = {
         "job_id": manifest["job_id"],
@@ -350,13 +400,10 @@ def fold_summary(events: list[dict[str, Any]], manifest: dict[str, Any]) -> dict
         "scoring_count": scoring_count,
         "failure_rate": failure_rate,
         "scoring_failure_rate": scoring_failure_rate,
-        "overall": overall,
-        "per_metric": per_metric,
-        "telemetry": {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "latency": latency,
-        },
+        "overall": quality["overall"],
+        "per_metric": quality["per_metric"],
+        "replicate_noise": quality["replicate_noise"],
+        "telemetry": _telemetry_rollup(successful_trials),
     }
 
     if manifest["kind"] == "optimize":

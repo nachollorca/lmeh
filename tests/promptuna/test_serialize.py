@@ -246,3 +246,14 @@ def test_stream_optimize_events_are_json_serializable(
             assert event["type"] in {"trial", "scoring", "step", "proposal"}
 
         assert step_index == 2
+
+
+def test_replicates_share_example_id_but_not_trial_id(example):
+    first = serialize_event(make_trial(example), job_id="j", seq=0, step_index=0)["payload"]
+    second = serialize_event(make_trial(example, replicate=1), job_id="j", seq=1, step_index=0)[
+        "payload"
+    ]
+
+    assert first["example_id"] == second["example_id"]
+    assert first["trial_id"] != second["trial_id"]
+    assert first["trial_id"].startswith(first["example_id"])

@@ -149,6 +149,28 @@ def test_run_streams_trial_events(client: TestClient, fake_complete_patch):
     assert events[1]["seq"] == 1
 
 
+def test_run_repeats_multiplies_trials(client: TestClient, fake_complete_patch):
+    start = client.post(
+        "/api/run",
+        json={
+            "project": "test_project",
+            "program": "echo",
+            "prompt": "baseline",
+            "model": "test:model",
+            "examples": "dev",
+            "workers": 1,
+            "repeats": 2,
+        },
+    )
+    job_id = start.json()["job_id"]
+    events = _wait_for_events(client, job_id)
+
+    assert [event["type"] for event in events] == ["trial"] * 4
+    assert sorted(event["payload"]["replicate"] for event in events) == [0, 0, 1, 1]
+    detail = client.get(f"/api/jobs/{job_id}").json()
+    assert detail["manifest"]["repeats"] == 2
+
+
 def test_evaluate_streams_trial_and_scoring_events(client: TestClient, fake_complete_patch):
     start = client.post(
         "/api/evaluate",

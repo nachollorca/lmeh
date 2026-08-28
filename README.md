@@ -84,6 +84,21 @@ The optimizer uses the metrics to learn the representation of the data and the e
 
 This is **rubric discovery**, not epoch training. Each step is a full re-evaluation of a new template; the proposer infers what the metrics still leave implicit from failure traces and encodes it in the prompt. For many tasks the missing rubric is a small set of concepts, so scores often climb steeply in the first few steps and then flatten or oscillate as remaining errors become idiosyncratic, metric tradeoffs, or judge noise.
 
+### Replication and noise
+
+Both LM calls in the loop are stochastic, so each is replicated independently:
+
+| Axis | Knob | Effect |
+| --- | --- | --- |
+| Program | `Experiment.repeats` | Each example is run *n* times; every run is its own `Trial` tagged with `replicate` |
+| Judge | `LLMJudgeMetric.repeats` | Each trial is judged *n* times; every judgement is its own `Scoring` tagged with `replicate` (programmatic metrics are deterministic and ignore it) |
+
+All `RunResults` aggregates collapse replicates, so raising either knob shrinks the error on the headline score instead of changing its meaning. `RunResults.replicate_noise()` reports the resulting per-metric **noise floor** (mean per-cell `sd`): improvements smaller than that number are indistinguishable from stochasticity, and the fix is more repeats or a better judge.
+
+`RunResults.replicate_divergence()` is the pre-metric counterpart: mean pairwise text dissimilarity (`1 - difflib` ratio) between the completions of one example's replicates, averaged over examples. It needs no metrics, so it is the only stochasticity signal a plain `run` job has. It measures *text* instability, not quality instability — harmless rewording counts as divergence — so it is reported as telemetry, never as a score. Both numbers also land in `summary.json` (`replicate_noise`, `telemetry.replicate_divergence`) for persisted server and CLI jobs.
+
+`repeats` is set per experiment, not per example: on the CLI (`--repeats`) and over HTTP (`repeats` in the request body) it applies to the whole dataset. Judge `repeats` lives on the metric object itself — in library code, or in the project's `metrics.py`.
+
 ### Inspiration
 
 `promptuna` is a proud Frankenstein of [DSPy](https://github.com/stanfordnlp/dspy), [Ragas](https://github.com/vibrantlabsai/ragas), [OPRO](https://arxiv.org/pdf/2309.03409), and [Optuna](https://github.com/optuna/optuna).

@@ -24,6 +24,10 @@ Resolution order (highest priority first):
 2. `PROMPTUNA_PROJECTS_ROOT` environment variable
 3. Default: `samples/` in a development checkout
 
+## Replication
+
+LM calls are stochastic. `--repeats n` runs every example *n* times (one `Trial` per replicate) so aggregates average out noise; it applies to the whole dataset. Judge-side replication is per metric (`LLMJudgeMetric(repeats=n)` in `metrics.py`).
+
 ## Job output
 
 `run`, `evaluate`, and `optimize` stream progress, then print results:
