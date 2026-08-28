@@ -92,6 +92,7 @@ export interface RunRequest {
 	model: string;
 	examples: string;
 	workers: number;
+	repeats: number;
 }
 
 export interface EvaluateRequest extends RunRequest {
@@ -115,6 +116,7 @@ export interface JobManifest {
 	examples: string;
 	model: string;
 	workers: number;
+	repeats?: number;
 	metrics?: string[];
 	steps?: number;
 	proposer_model?: string;
@@ -134,6 +136,7 @@ export interface JobListItem {
 	examples: string;
 	model: string;
 	workers: number;
+	repeats: number;
 	metrics: string[] | null;
 	steps: number | null;
 	proposer_model: string | null;

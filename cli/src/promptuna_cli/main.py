@@ -72,6 +72,10 @@ def run(
         int,
         typer.Option("--workers", "-w", min=1, help="Parallel trial workers."),
     ] = 1,
+    repeats: Annotated[
+        int,
+        typer.Option("--repeats", "-r", min=1, help="Program runs per example (replicates)."),
+    ] = 1,
     output_format: Annotated[
         OutputFormat,
         typer.Option("--format", "-f", help="Output format for the finished job."),
@@ -85,6 +89,7 @@ def run(
             prompt=prompt,
             model=model,
             examples=examples,
+            repeats=repeats,
         )
         project_dir = resolve_project_dir(project)
         dataset_path = resolve_dataset_path(project_dir, examples)
@@ -97,6 +102,7 @@ def run(
             dataset_path=dataset_path,
             model=model,
             workers=workers,
+            repeats=repeats,
         )
     except ProjectValidationError as exc:
         handle_project_error(exc)
@@ -125,6 +131,10 @@ def evaluate(
         int,
         typer.Option("--workers", "-w", min=1, help="Parallel trial workers."),
     ] = 1,
+    repeats: Annotated[
+        int,
+        typer.Option("--repeats", "-r", min=1, help="Program runs per example (replicates)."),
+    ] = 1,
     output_format: Annotated[
         OutputFormat,
         typer.Option("--format", "-f", help="Output format for the finished job."),
@@ -140,6 +150,7 @@ def evaluate(
             model=model,
             examples=examples,
             metrics=metric_names,
+            repeats=repeats,
         )
         project_dir = resolve_project_dir(project)
         dataset_path = resolve_dataset_path(project_dir, examples)
@@ -152,6 +163,7 @@ def evaluate(
             dataset_path=dataset_path,
             model=model,
             workers=workers,
+            repeats=repeats,
             metrics=tuple(metric_names),
         )
     except ProjectValidationError as exc:
@@ -191,6 +203,10 @@ def optimize(
         int,
         typer.Option("--workers", "-w", min=1, help="Parallel trial workers."),
     ] = 1,
+    repeats: Annotated[
+        int,
+        typer.Option("--repeats", "-r", min=1, help="Program runs per example (replicates)."),
+    ] = 1,
     output_format: Annotated[
         OutputFormat,
         typer.Option("--format", "-f", help="Output format for the finished job."),
@@ -206,6 +222,7 @@ def optimize(
             model=model,
             examples=examples,
             metrics=metric_names,
+            repeats=repeats,
         )
         project_dir = resolve_project_dir(project)
         dataset_path = resolve_dataset_path(project_dir, examples)
@@ -218,6 +235,7 @@ def optimize(
             dataset_path=dataset_path,
             model=model,
             workers=workers,
+            repeats=repeats,
             metrics=tuple(metric_names),
             steps=steps,
             proposer_model=proposer_model,

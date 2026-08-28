@@ -141,6 +141,7 @@ class JobConfig:
     dataset_path: Path
     model: str
     workers: int
+    repeats: int = 1
     metrics: tuple[str, ...] | None = None
     steps: int | None = None
     proposer_model: str | None = None
@@ -165,6 +166,7 @@ def build_manifest(*, job_id: str, config: JobConfig) -> dict[str, Any]:
         "dataset_sha256": sha256_file(config.dataset_path),
         "model": config.model,
         "workers": config.workers,
+        "repeats": config.repeats,
         "error": None,
     }
     if config.metrics is not None:

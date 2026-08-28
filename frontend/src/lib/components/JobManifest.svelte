@@ -52,6 +52,10 @@
 			<span class="label">Workers</span>
 			<span>{manifest.workers}</span>
 		</div>
+		<div>
+			<span class="label">Repeats</span>
+			<span>{manifest.repeats ?? 1}</span>
+		</div>
 		{#if manifest.metrics}
 			<div class="span-all">
 				<span class="label">Metrics</span>

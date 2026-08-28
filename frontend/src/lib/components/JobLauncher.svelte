@@ -38,6 +38,7 @@
 	let examples = $state('');
 	let model = $state('');
 	let workers = $state(1);
+	let repeats = $state(1);
 	let steps = $state(1);
 	let proposerModel = $state('');
 	let selectedMetrics = $state<string[]>([]);
@@ -105,7 +106,8 @@
 			prompt,
 			examples,
 			model,
-			workers
+			workers,
+			repeats
 		};
 		if (operation === 'evaluate') {
 			return { ...base, metrics: [...selectedMetrics] };
@@ -132,7 +134,8 @@
 				prompt,
 				model,
 				examples,
-				workers
+				workers,
+				repeats
 			};
 
 			let jobId: string;
@@ -236,6 +239,10 @@
 			<div class="field">
 				<label for="workers">Workers</label>
 				<input id="workers" type="number" min="1" bind:value={workers} required />
+			</div>
+			<div class="field">
+				<label for="repeats">Repeats</label>
+				<input id="repeats" type="number" min="1" bind:value={repeats} required />
 			</div>
 
 			{#if operation === 'optimize'}
