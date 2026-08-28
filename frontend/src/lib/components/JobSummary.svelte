@@ -46,8 +46,25 @@
 						<span class="label">{name}</span>
 						<strong>{stats.mean.toFixed(3)}</strong>
 						<span class="muted"> (n={stats.n})</span>
+						{#if summary.replicate_noise?.[name]}
+							<span class="muted">
+								· noise floor {summary.replicate_noise[name].mean.toFixed(3)}
+							</span>
+						{/if}
 					</div>
 				{/each}
+				{#if summary.telemetry.replicate_divergence}
+					<div>
+						<span class="label" title="Mean pairwise text dissimilarity between replicates">
+							Replicate divergence
+						</span>
+						<strong>{summary.telemetry.replicate_divergence.mean.toFixed(3)}</strong>
+						<span class="muted">
+							± {summary.telemetry.replicate_divergence.sd.toFixed(3)} (n={summary.telemetry
+								.replicate_divergence.n})
+						</span>
+					</div>
+				{/if}
 				<div>
 					<span class="label">Tokens</span>
 					<strong>{summary.telemetry.input_tokens}</strong> in /
