@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.37.1 (2026-08-31)
+
+### Bug Fixes
+
+- **frontend**: Silence state_referenced_locally in JsonView
+  ([`1bf36bd`](https://github.com/nachollorca/promptuna/commit/1bf36bd01d589f15ca232a4cc591eb7e2f584386))
+
+
 ## v1.37.0 (2026-08-31)
 
 ### Features

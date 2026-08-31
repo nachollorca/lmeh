@@ -1,6 +1,6 @@
 [project]
 name = "promptuna-server"
-version = "1.37.0"
+version = "1.37.1"
 description = "FastAPI server for streaming promptuna run / evaluate / optimize jobs"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Ignacio Llorca", email = "nllorca@proton.me" }]
 dependencies = [
     "fastapi>=0.115.0",
-    "promptuna==1.37.0",
+    "promptuna==1.37.1",
     "uvicorn[standard]>=0.32.0",
 ]
 
