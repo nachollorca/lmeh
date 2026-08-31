@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.37.2 (2026-08-31)
+
+### Bug Fixes
+
+- Remove false warning from svelte
+  ([`5bff32c`](https://github.com/nachollorca/promptuna/commit/5bff32c4e65f7d37841279d31f7c238615d27a07))
+
+
 ## v1.37.1 (2026-08-31)
 
 ### Bug Fixes
