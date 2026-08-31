@@ -38,7 +38,15 @@
 {/if}
 
 {#if store.errorMessage && store.status === 'error'}
-	<div class="error-banner panel">{store.errorMessage}</div>
+	<div class="error-banner panel">
+		{store.errorMessage}
+		{#if store.errorStacktrace}
+			<details>
+				<summary>Stacktrace</summary>
+				<pre class="mono">{store.errorStacktrace}</pre>
+			</details>
+		{/if}
+	</div>
 {/if}
 
 {#if kind === 'optimize'}

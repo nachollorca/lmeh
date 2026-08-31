@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import traceback
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -81,14 +82,16 @@ def stream_job(
                 step_index += 1
         archive.finalize("done")
     except Exception as exc:
+        stacktrace = "".join(traceback.format_exception(exc))
         error_envelope = serialize_error(
             job_id=job_id,
             seq=seq,
             message=str(exc),
+            stacktrace=stacktrace,
             step_index=step_index,
         )
         archive.append_event(error_envelope)
-        archive.finalize("error", error=str(exc))
+        archive.finalize("error", error=str(exc), stacktrace=stacktrace)
         yield error_envelope
         raise
 
@@ -168,6 +171,7 @@ def build_manifest(*, job_id: str, config: JobConfig) -> dict[str, Any]:
         "workers": config.workers,
         "repeats": config.repeats,
         "error": None,
+        "error_stacktrace": None,
     }
     if config.metrics is not None:
         manifest["metrics"] = list(config.metrics)
@@ -211,17 +215,26 @@ class JobArchive:
             handle.write("\n")
             handle.flush()
 
-    def finalize(self, status: JobStatus, *, error: str | None = None) -> dict[str, Any]:
+    def finalize(
+        self,
+        status: JobStatus,
+        *,
+        error: str | None = None,
+        stacktrace: str | None = None,
+    ) -> dict[str, Any]:
         """Mark the job finished and write ``summary.json``."""
         events = load_events(self.job_dir)
         summary = fold_summary(events, self._manifest)
         summary["status"] = status
         if error is not None:
             summary["error"] = error
+        if stacktrace is not None:
+            summary["error_stacktrace"] = stacktrace
 
         self._manifest["status"] = status
         self._manifest["finished_at"] = _utc_now()
         self._manifest["error"] = error
+        self._manifest["error_stacktrace"] = stacktrace
         self._write_manifest()
         _write_json(self.job_dir / _SUMMARY_NAME, summary)
         return summary

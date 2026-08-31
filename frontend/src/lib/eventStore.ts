@@ -30,6 +30,7 @@ export function createEventStoreState(manifest: JobManifest | null = null): Even
 		manifest,
 		status: manifest?.status ?? 'running',
 		errorMessage: manifest?.error ?? null,
+		errorStacktrace: manifest?.error_stacktrace ?? null,
 		trialsById: new Map(),
 		groups: new Map(),
 		flatGroupIds: [],
@@ -198,11 +199,14 @@ export function reduceEvent(state: EventStoreState, envelope: EventEnvelope): Ev
 			next.proposing = next.manifest?.kind === 'optimize' && next.status === 'running';
 			break;
 		}
-		case 'error':
+		case 'error': {
+			const payload = envelope.payload as { message: string; stacktrace?: string };
 			next.status = 'error';
-			next.errorMessage = (envelope.payload as { message: string }).message;
+			next.errorMessage = payload.message;
+			next.errorStacktrace = payload.stacktrace ?? null;
 			next.proposing = false;
 			break;
+		}
 	}
 
 	return next;
@@ -221,7 +225,12 @@ export function reduceEvents(
 	if (summary) {
 		next = { ...next, summary, status: manifest?.status ?? next.status };
 	} else if (manifest?.status === 'done' || manifest?.status === 'error') {
-		next = { ...next, status: manifest.status, errorMessage: manifest.error ?? next.errorMessage };
+		next = {
+			...next,
+			status: manifest.status,
+			errorMessage: manifest.error ?? next.errorMessage,
+			errorStacktrace: manifest.error_stacktrace ?? next.errorStacktrace
+		};
 	}
 	next.proposing =
 		next.manifest?.kind === 'optimize' &&
