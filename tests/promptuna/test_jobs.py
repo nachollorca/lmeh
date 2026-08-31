@@ -261,8 +261,11 @@ def test_stream_job_records_errors(workspace_root: Path, job_config: JobConfig, 
     assert record.manifest["status"] == "error"
     assert record.manifest["error"] == "worker crashed"
     assert record.events[-1]["type"] == "error"
+    assert "RuntimeError: worker crashed" in record.events[-1]["payload"]["stacktrace"]
+    assert "Traceback" in record.manifest["error_stacktrace"]
     assert record.summary is not None
     assert record.summary["status"] == "error"
+    assert "worker crashed" in record.summary["error_stacktrace"]
 
 
 def test_stream_job_proposal_uses_step_index_without_advancing(

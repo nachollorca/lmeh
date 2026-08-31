@@ -125,6 +125,7 @@ export interface JobManifest {
 	proposer_model?: string;
 	dataset_sha256?: string;
 	error?: string | null;
+	error_stacktrace?: string | null;
 }
 
 export interface JobListItem {
@@ -219,6 +220,7 @@ export interface EventStoreState {
 	manifest: JobManifest | null;
 	status: JobStatus;
 	errorMessage: string | null;
+	errorStacktrace: string | null;
 	trialsById: Map<string, TrialWithScorings>;
 	/** Group key -> its replicate keys into `trialsById`, in arrival order. */
 	groups: Map<string, string[]>;

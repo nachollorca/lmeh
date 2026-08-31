@@ -66,15 +66,19 @@ def serialize_error(
     job_id: str,
     seq: int,
     message: str,
+    stacktrace: str | None = None,
     step_index: int = 0,
 ) -> dict[str, Any]:
     """Build a JSON-safe error envelope for fatal job failures."""
+    payload: dict[str, Any] = {"message": message}
+    if stacktrace is not None:
+        payload["stacktrace"] = stacktrace
     return {
         "seq": seq,
         "job_id": job_id,
         "step_index": step_index,
         "type": "error",
-        "payload": {"message": message},
+        "payload": payload,
     }
 
 
