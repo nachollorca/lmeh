@@ -2,6 +2,39 @@
 
 <!-- version list -->
 
+## v1.36.0 (2026-08-31)
+
+### Bug Fixes
+
+- **jobs**: Aggregate summaries per (example, metric) cell
+  ([`0431183`](https://github.com/nachollorca/promptuna/commit/0431183e4411158fcf41a0d410caf542e22129e5))
+
+- **list-programs**: Further reinforce how programs are discovered
+  ([`7eaa5a7`](https://github.com/nachollorca/promptuna/commit/7eaa5a779f0e7fea5ddb07b1a53786a7b6c84e16))
+
+### Documentation
+
+- **readme**: Document replicate divergence alongside the noise floor
+  ([`c823aa5`](https://github.com/nachollorca/promptuna/commit/c823aa5d92c03b3cf7d38b947f157d6ec97cbff4))
+
+### Features
+
+- **evaluate**: Measure replicate divergence as telemetry
+  ([`8613384`](https://github.com/nachollorca/promptuna/commit/861338417c5d72d357383917d8caff2d1ce333f2))
+
+- **frontend**: Pack replicates of one example into a single trial row
+  ([`8f43226`](https://github.com/nachollorca/promptuna/commit/8f43226da0e0176489ec6c205eeb252469fdaf50))
+
+- **frontend**: Show noise floor and replicate divergence in the summary
+  ([`6d8e496`](https://github.com/nachollorca/promptuna/commit/6d8e496b0fa6f018b4fe5ab11b7e460a597efe1b))
+
+- **repeats**: Add server and CLI knobs for trial repetition
+  ([`641aa66`](https://github.com/nachollorca/promptuna/commit/641aa66d19947dd4a41dd8be851c085f670420ee))
+
+- **serialize**: Tag events with a replicate-independent example_id
+  ([`b571531`](https://github.com/nachollorca/promptuna/commit/b5715315c8a74fdbe54e434442ea9c775235faf3))
+
+
 ## v1.35.3 (2026-08-20)
 
 ### Bug Fixes
