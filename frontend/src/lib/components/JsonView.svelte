@@ -15,11 +15,10 @@
 
 	// ponytail: containers with ≤2 entries stay open by default; larger collapse.
 	// `value` is fixed per node instance, so a one-shot computation is fine.
-	const initialOpen =
-		typeof value !== 'object' || value === null
-			? true
-			: (Array.isArray(value) ? value.length : Object.keys(value).length) <= 2;
-	let open = $state(initialOpen);
+	let open = $state(initialOpen());
+	function initialOpen(): boolean {
+		return !isContainer || count(value) <= 2;
+	}
 
 	function entries(v: unknown): [string, unknown][] {
 		if (Array.isArray(v)) return (v as unknown[]).map((item, i) => [String(i), item]);
