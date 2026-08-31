@@ -1,13 +1,13 @@
 [project]
 name = "promptuna-cli"
-version = "1.36.0"
+version = "1.37.0"
 description = "Typer CLI for on-disk promptuna run / evaluate / optimize jobs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Ignacio Llorca", email = "nllorca@proton.me" }]
 dependencies = [
-    "promptuna==1.36.0",
+    "promptuna==1.37.0",
     "typer>=0.12",
 ]
 

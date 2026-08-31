@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.37.0 (2026-08-31)
+
+### Features
+
+- **jobs**: Register also stacktraces
+  ([`04ea04e`](https://github.com/nachollorca/promptuna/commit/04ea04ec7fd353c7e467bd6b04b64e5971e0e2ec))
+
+
 ## v1.36.0 (2026-08-31)
 
 ### Bug Fixes
