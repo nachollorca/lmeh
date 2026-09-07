@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import traceback
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -294,6 +295,14 @@ def load_job(jobs_root: Path, job_id: str) -> JobRecord:
         events=load_events(job_dir),
         summary=load_summary(job_dir),
     )
+
+
+def delete_job(jobs_root: Path, job_id: str) -> None:
+    """Delete ``<jobs_root>/<job_id>/`` and every file it holds."""
+    job_dir = jobs_root / job_id
+    if not job_dir.is_dir():
+        raise FileNotFoundError(job_id)
+    shutil.rmtree(job_dir)
 
 
 def list_job_ids(jobs_root: Path) -> list[str]:

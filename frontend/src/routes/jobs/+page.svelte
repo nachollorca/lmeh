@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { fetchJobs } from '$lib/api';
+	import { deleteJob, fetchJobs } from '$lib/api';
 	import {
 		areJobsComparable,
 		canAddToComparison,
@@ -16,6 +16,25 @@
 	let error = $state<string | null>(null);
 	let loading = $state(true);
 	let selectedIds = $state<string[]>([]);
+	let deletingId = $state<string | null>(null);
+
+	const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+	function pad2(value: number): string {
+		return String(value).padStart(2, '0');
+	}
+
+	/** Render an ISO timestamp as e.g. `We, 2026-09-02 14:30` in local time. */
+	function formatTimestamp(iso: string): string {
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return iso;
+		const ymd = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+		return `${WEEKDAYS[date.getDay()]}, ${ymd} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+	}
+
+	function sortedMetrics(job: JobListItem): string[] {
+		return [...(job.metrics ?? [])].sort((a, b) => a.localeCompare(b));
+	}
 
 	const { min: minCompare, max: maxCompare } = compareJobLimits();
 
@@ -57,6 +76,22 @@
 
 	function clearSelection() {
 		selectedIds = [];
+	}
+
+	async function removeJob(job: JobListItem) {
+		const label = job.job_id.slice(0, 8);
+		if (!confirm(`Delete job ${label}…? This permanently removes its archive.`)) return;
+		deletingId = job.job_id;
+		error = null;
+		try {
+			await deleteJob(job.job_id);
+			jobs = jobs.filter((entry) => entry.job_id !== job.job_id);
+			selectedIds = selectedIds.filter((id) => id !== job.job_id);
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			deletingId = null;
+		}
 	}
 
 	const compareIds = $derived(selectedIds.join(','));
@@ -122,7 +157,10 @@
 					<th>Kind</th>
 					<th>Status</th>
 					<th>Project</th>
+					<th>Dataset</th>
+					<th>Metrics</th>
 					<th>Started</th>
+					<th class="actions-col" aria-label="Actions"></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -149,7 +187,25 @@
 						<td>{job.kind}</td>
 						<td><span class="badge {job.status}">{job.status}</span></td>
 						<td>{job.project}</td>
-						<td class="mono">{job.started_at}</td>
+						<td>{job.examples}</td>
+						<td>
+							{#if sortedMetrics(job).length > 0}
+								{sortedMetrics(job).join(', ')}
+							{:else}
+								<span class="muted">—</span>
+							{/if}
+						</td>
+						<td class="mono">{formatTimestamp(job.started_at)}</td>
+						<td class="actions-col">
+							<button
+								type="button"
+								class="btn btn-ghost btn-danger"
+								disabled={deletingId === job.job_id}
+								onclick={() => removeJob(job)}
+							>
+								{deletingId === job.job_id ? 'Deleting…' : 'Delete'}
+							</button>
+						</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -189,6 +245,25 @@
 
 	.compare-col {
 		width: 40px;
+	}
+
+	.actions-col {
+		width: 1%;
+		white-space: nowrap;
+		text-align: right;
+	}
+
+	.btn-danger {
+		color: var(--danger);
+	}
+
+	.btn-danger:hover:not(:disabled) {
+		border-color: var(--danger);
+	}
+
+	.btn-danger:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.compare-col input[type='checkbox'] {

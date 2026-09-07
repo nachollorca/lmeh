@@ -24,6 +24,9 @@ from promptuna.jobs import (
     load_summary,
     stream_job,
 )
+from promptuna.jobs import (
+    delete_job as _delete_job_dir,
+)
 from promptuna.optimize import Proposal, Step, stream_optimize
 from promptuna.program import Example, Experiment
 from promptuna.run import Trial, stream_run
@@ -197,6 +200,16 @@ def reset_jobs() -> None:
 def list_jobs() -> list[dict[str, Any]]:
     """Return manifests for all on-disk jobs, newest-first."""
     return list_job_manifests(get_jobs_root())
+
+
+def delete_job(job_id: str) -> None:
+    """Delete an on-disk job. Refuse while it is still running."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is not None and job.status == "running":
+            raise ConflictError("job is still running")
+        _delete_job_dir(get_jobs_root(), job_id)
+        _jobs.pop(job_id, None)
 
 
 def load_job_detail(job_id: str) -> JobRecord:
