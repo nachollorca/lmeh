@@ -14,6 +14,8 @@
 	let { step, store, previousScore, expandedTrials, onToggleTrial }: Props = $props();
 
 	let thinkingOpen = $state(false);
+	let templateOpen = $state(false);
+	let runsOpen = $state(false);
 
 	const delta = $derived(
 		step.step && previousScore !== null ? step.step.score - previousScore : null
@@ -73,28 +75,51 @@
 			{:else if step.stepIndex === 0}
 				<p class="muted">Baseline step (no proposer thinking)</p>
 			{/if}
-			<p class="muted proposal-template-label">PROMPT TEMPLATE</p>
-			<pre class="mono proposal-template">{step.proposal.prompt_template}</pre>
+			<button
+				type="button"
+				class="thinking-toggle template-toggle"
+				onclick={() => (templateOpen = !templateOpen)}
+				aria-expanded={templateOpen}
+			>
+				{templateOpen ? '▼' : '▶'} PROMPT TEMPLATE
+			</button>
+			{#if templateOpen}
+				<pre class="mono proposal-template">{step.proposal.prompt_template}</pre>
+			{/if}
 		</div>
 	{/if}
 
-	<div class="trials">
-		{#each step.groupIds as groupId, i (groupId)}
-			{@const replicates = (store.groups.get(groupId) ?? [])
-				.map((key) => store.trialsById.get(key))
-				.filter((entry) => entry !== undefined)}
-			{#if replicates.length > 0}
-				<TrialRow
-					{replicates}
-					expanded={expandedTrials.has(groupId)}
-					onToggle={() => onToggleTrial(groupId)}
-					index={i + 1}
-					metrics={store.manifest?.metrics ?? []}
-					repeats={store.manifest?.repeats ?? 1}
-				/>
+	{#if step.groupIds.length > 0}
+		<div class="runs-block">
+			<button
+				type="button"
+				class="runs-toggle"
+				onclick={() => (runsOpen = !runsOpen)}
+				aria-expanded={runsOpen}
+			>
+				{runsOpen ? '▼' : '▶'} RUNS ({step.groupIds.length})
+			</button>
+			{#if runsOpen}
+				<div class="trials">
+					{#each step.groupIds as groupId, i (groupId)}
+						{@const replicates = (store.groups.get(groupId) ?? [])
+							.map((key) => store.trialsById.get(key))
+							.filter((entry) => entry !== undefined)}
+						{#if replicates.length > 0}
+							<TrialRow
+								{replicates}
+								expanded={expandedTrials.has(groupId)}
+								onToggle={() => onToggleTrial(groupId)}
+								index={i + 1}
+								metrics={store.manifest?.metrics ?? []}
+								repeats={store.manifest?.repeats ?? 1}
+							/>
+						{/if}
+					{/each}
+				</div>
 			{/if}
-		{/each}
-	</div>
+		</div>
+	{/if}
 
 	{#if step.step}
 		<footer class="step-footer">
@@ -244,7 +269,8 @@
 		white-space: pre-wrap;
 	}
 
-	.thinking-toggle {
+	.thinking-toggle,
+	.runs-toggle {
 		border: 1px solid var(--border);
 		background: transparent;
 		padding: 2px var(--space-sm);
@@ -256,8 +282,13 @@
 		margin-bottom: var(--space-sm);
 	}
 
-	.thinking-toggle:hover {
+	.thinking-toggle:hover,
+	.runs-toggle:hover {
 		border-color: var(--slate-900);
+	}
+
+	.runs-block {
+		margin-bottom: var(--space-md);
 	}
 
 	.thinking-sections {
@@ -289,16 +320,12 @@
 		margin: 0;
 	}
 
-	.proposal-template-label {
-		font-family: var(--font-mono);
-		font-size: 11px;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		margin: 0 0 var(--space-xs);
+	.template-toggle {
+		display: block;
 	}
 
 	.proposal-template {
-		margin: 0;
+		margin: var(--space-sm) 0 0;
 		padding: var(--space-md);
 		background: var(--surface-secondary);
 		border: 1px solid var(--border);
