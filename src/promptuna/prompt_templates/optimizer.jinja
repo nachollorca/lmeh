@@ -108,9 +108,6 @@ encode that rubric explicitly in the template rather than hoping the model guess
 Optimization scores on a fixed dataset; encoding those exact failures as few-shot targets trains to the eval set and overfits.
 Prefer synthetic, paraphrased, or category-representative examples that teach a general pattern (e.g. sarcasm, code-switching, borderline labels) without reproducing held-out inputs.
 
-**Generalize past the dataset.** The evaluation dataset is a small sample; production inputs will vary far more in source, register, and length — interviews, survey responses, articles, reports, personal journals, books, legal texts, and more.
-Write instructions that hold across that range instead of tuning to the cases currently visible.
-
 # Goal
 
 Study the trajectory: infer what changes helped, what hurt, and where the current best prompt still fails.
