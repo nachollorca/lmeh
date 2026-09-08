@@ -134,6 +134,8 @@ These are the highest-leverage directions—custom proposers, trajectory renderi
 
 ## Development
 
+This package uses [`lmdk`](https://github.com/nachollorca/lmdk) to inference LLMs.
+
 This repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) with three publishable packages that share one version number:
 
 | Package | Path | Role |
