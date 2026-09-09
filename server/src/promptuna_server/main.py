@@ -146,6 +146,17 @@ def get_job(job_id: str) -> JobDetailResponse:
     )
 
 
+@api.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_job(job_id: str) -> None:
+    """Delete one persisted job and its on-disk directory."""
+    try:
+        jobs.delete_job(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
+    except jobs.ConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 @api.post("/run", response_model=JobStartResponse)
 def start_run(request: RunRequest) -> JobStartResponse:
     """Start a run job; stream trials via ``GET /jobs/{job_id}/events``."""

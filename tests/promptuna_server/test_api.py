@@ -337,3 +337,31 @@ def test_get_job_returns_manifest_events_and_summary(client: TestClient, fake_co
 def test_get_unknown_job_returns_404(client: TestClient):
     response = client.get("/api/jobs/does-not-exist")
     assert response.status_code == 404
+
+
+def test_delete_job_removes_archive(client: TestClient, fake_complete_patch):
+    start = client.post(
+        "/api/run",
+        json={
+            "project": "test_project",
+            "program": "echo",
+            "prompt": "baseline",
+            "model": "test:model",
+            "examples": "dev",
+            "workers": 1,
+        },
+    )
+    job_id = start.json()["job_id"]
+    _wait_for_events(client, job_id)
+
+    response = client.delete(f"/api/jobs/{job_id}")
+    assert response.status_code == 204
+    assert not (get_jobs_root() / job_id).exists()
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    listed = client.get("/api/jobs").json()["jobs"]
+    assert all(item["job_id"] != job_id for item in listed)
+
+
+def test_delete_unknown_job_returns_404(client: TestClient):
+    response = client.delete("/api/jobs/does-not-exist")
+    assert response.status_code == 404

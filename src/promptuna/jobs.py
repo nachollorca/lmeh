@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import traceback
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -296,6 +297,14 @@ def load_job(jobs_root: Path, job_id: str) -> JobRecord:
     )
 
 
+def delete_job(jobs_root: Path, job_id: str) -> None:
+    """Delete ``<jobs_root>/<job_id>/`` and every file it holds."""
+    job_dir = jobs_root / job_id
+    if not job_dir.is_dir():
+        raise FileNotFoundError(job_id)
+    shutil.rmtree(job_dir)
+
+
 def list_job_ids(jobs_root: Path) -> list[str]:
     """Return job ids sorted newest-first by manifest ``started_at``."""
     if not jobs_root.is_dir():
@@ -385,6 +394,23 @@ def _telemetry_rollup(successful_trials: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _steps_rollup(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Extract step summaries and identify the best step."""
+    step_summaries = [
+        {
+            "step_index": event["step_index"],
+            "score": event["payload"]["score"],
+            "prompt_template": event["payload"]["prompt_template"],
+            "summary": event["payload"]["summary"],
+        }
+        for event in steps
+    ]
+    result: dict[str, Any] = {"steps": step_summaries}
+    if step_summaries:
+        result["best_step"] = max(step_summaries, key=lambda item: item["score"])
+    return result
+
+
 def fold_summary(events: list[dict[str, Any]], manifest: dict[str, Any]) -> dict[str, Any]:
     """Fold event envelopes into a denormalized summary dict.
 
@@ -420,18 +446,6 @@ def fold_summary(events: list[dict[str, Any]], manifest: dict[str, Any]) -> dict
     }
 
     if manifest["kind"] == "optimize":
-        step_summaries = [
-            {
-                "step_index": event["step_index"],
-                "score": event["payload"]["score"],
-                "prompt_template": event["payload"]["prompt_template"],
-                "summary": event["payload"]["summary"],
-            }
-            for event in steps
-        ]
-        summary["steps"] = step_summaries
-        if step_summaries:
-            best = max(step_summaries, key=lambda item: item["score"])
-            summary["best_step"] = best
+        summary.update(_steps_rollup(steps))
 
     return summary

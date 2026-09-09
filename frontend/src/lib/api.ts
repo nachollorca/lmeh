@@ -25,6 +25,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		}
 		throw new ApiError(response.status, detail);
 	}
+	if (response.status === 204) {
+		return undefined as T;
+	}
 	return response.json() as Promise<T>;
 }
 
@@ -56,6 +59,10 @@ export function fetchJobs(): Promise<{ jobs: JobListItem[] }> {
 
 export function fetchJob(jobId: string): Promise<JobDetailResponse> {
 	return request(`/jobs/${jobId}`);
+}
+
+export function deleteJob(jobId: string): Promise<void> {
+	return request(`/jobs/${jobId}`, { method: 'DELETE' });
 }
 
 export function startRun(body: RunRequest): Promise<{ job_id: string }> {
